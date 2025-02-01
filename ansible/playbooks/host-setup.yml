@@ -19,7 +19,7 @@
   gather_facts: "{{ gather_facts | default(true) }}"
   environment: "{{ deployment_environment_variables | default({}) }}"
   vars:
-    helm_version: ""  # Assume the default or set an explicit version.
+    helm_version: "" # Assume the default or set an explicit version.
   tasks:
     - name: Download Helm command line tool
       ansible.builtin.uri:
@@ -36,19 +36,14 @@
 
 - hosts: all
   become: true
-  gather_facts: "{{ gather_facts | default(true) }}"
+  gather_facts: true
   environment: "{{ deployment_environment_variables | default({}) }}"
   roles:
     - host_setup
-
-- hosts: openstack_compute_nodes
-  become: true
-  gather_facts: true
-  environment: "{{ deployment_environment_variables | default({}) }}"
-  tasks:
+  post_tasks:
     - name: Copy over multipath Round Robin configuration file
       when:
-       - custom_multipath | default(false) | bool
+        - custom_multipath | default(false) | bool
       block:
         - name: Copy config file and restart multipathd
           ansible.builtin.copy:
@@ -56,24 +51,9 @@
             dest: /etc/multipath.conf
             owner: root
             group: root
-            mode: '0644'
+            mode: "0644"
           notify:
-            - Restart multipathd systemd service
-  handlers:
-    - name: Restart multipathd systemd service
-      ansible.builtin.systemd:
-        name: multipathd
-        state: restarted
-        daemon_reload: true
-        enabled: true
-
-
-
-- hosts: openstack_compute_nodes
-  become: true
-  gather_facts: true
-  environment: "{{ deployment_environment_variables | default({}) }}"
-  tasks:
+            - Restart multipathd and multipath-tools service
     - name: Install open-iscsi and multipath on nova compute nodes
       when:
         - enable_iscsi | default(false) | bool
@@ -96,3 +76,13 @@
             name: multipathd.service
             state: "{{ (_multipath_packages is changed) | ternary('restarted', 'started') }}"
             enabled: true
+  handlers:
+    - name: Restart multipathd and multipath-tools service
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: restarted
+        daemon_reload: true
+        enabled: true
+      loop:
+        - multipathd
+        - multipath-tools
