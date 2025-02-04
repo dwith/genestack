@@ -1,0 +1,99 @@
+#!/usr/bin/python3
+import configparser
+import subprocess
+import argparse
+import requests
+import platform
+import json
+import sys
+import re
+
+__AUTHOR__ = "Dan With"
+
+
+
+
+def check(multipath_output, config_parser):
+    return
+
+
+def update_alert(mpcd, alert_status, config_parser):
+    hostname = platform.node()
+    details = "Multipath device(s) have failed or have faulty paths"
+    description = "Multipath device(s) have failed or have faulty paths"
+    payload_raw = {
+        "alert_data": {"alert": mpcd},
+        "generated_by": "Host-Monitoring",
+        "hostname": hostname,
+        "service_name": str(config_parser["check.alert"]["service_name"]),
+        "details": details,
+        "Description": description,
+        "tags": "host,compute",
+        "Title": "RAID disk alert",
+        "status": alert_status,
+        "severity": "CRITICAL",
+    }
+    payload = json.dumps(payload_raw)
+    headers = {
+        "X-Username": config_parser["check.alert"]["username"],
+        "X-Auth-Key": config_parser["check.alert"]["auth_key"],
+        "X-API-Key": config_parser["check.alert"]["api_key"],
+    }
+    url = str(config_parser["check.alert"]["url"]) + "/api/new_event"
+    resp = requests.post(url, data=payload, headers=headers, verify=False)
+    resp.close()
+    return
+
+
+def parse_cmd_args(argv):
+    p = argparse.ArgumentParser(
+        prog="disk-raid-monitor",
+        description="Genestack RAID and disk monitoring",
+        epilog="=====================================",
+    )
+    p.add_argument(
+        "command_choice",
+        choices=["list", "check"],
+        default="list",
+        help="Command choice",
+    )
+    p.add_argument(
+        "--conf",
+        "-c",
+        dest="conf",
+        default="/root/raid-disk-monitor.ini",
+        help="Specify .ini configuration file path",
+    )
+    cmd_args = p.parse_args()
+    return cmd_args
+
+
+def main():
+    argv = sys.argv[1:]
+    cmd_args = parse_cmd_args(argv)
+    conf_ini_path = cmd_args.conf
+    config_parser = configparser.ConfigParser()
+    with open(conf_ini_path, "r") as ini_file:
+        config_parser.read_file(ini_file)
+    ### New stuff
+    ### /opt/MegaRAID/perccli# ./perccli64 /c0 show bootdrive J
+    ### opt/MegaRAID/perccli# ./perccli64 /c0 show all J
+    ### { Controllers: [{"Command Status": {},"Response Data": {}}] }
+    ### In "Response Data" look for "Drive Groups", "Virtual Drives", "VD LIST"
+    ### "Phyisical Drives", "PD LIST"
+    ### /opt/MegaRAID/perccli# ./perccli64 show J
+    ### Ctl=Controller Index|DGs=Drive groups|VDs=Virtual drives|Fld=Failed
+    ### PDs=Physical drives|DNOpt=Array NotOptimal|VNOpt=VD NotOptimal|Opt=Optimal
+    ### Msng=Missing|Dgd=Degraded|NdAtn=Need Attention|Unkwn=Unknown
+    ### sPR=Scheduled Patrol Read|DS=DimmerSwitch|EHS=Emergency Spare Drive
+    ### Y=Yes|N=No|ASOs=Advanced Software Options|BBU=Battery backup unit/CV
+    ### Hlth=Health|Safe=Safe-mode boot|CertProv-Certificate Provision mode
+    ### Chrg=Charging | MsngCbl=Cable Failure
+    ### /opt/MegaRAID/perccli# ./perccli64 /c0/d1 show all
+    ### /opt/MegaRAID/perccli# ./perccli64 /c0/e64/s1 show all
+
+    return
+
+
+if __name__ == "__main__":
+    sys.exit(main())
