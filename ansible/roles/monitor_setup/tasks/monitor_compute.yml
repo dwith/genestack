@@ -1,5 +1,6 @@
 ---
 
+### Multipath monitoring
 - name: Copy Multipath mpctl file to compute nodes
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/roles/monitor_setup/files/mpctl"
@@ -10,10 +11,10 @@
   when: monitor_compute.on_off_status == 'on' and monitor_compute.multipath_check == 'on'
 
 
-- name: Copy and interpolate mpctl.ini config file
+- name: Copy and interpolate mpctl.yml config file
   ansible.builtin.template:
-    src: "{{ playbook_dir }}/roles/monitor_setup/templates/mpctl.ini.j2"
-    dest: /opt/monitor/conf/mpctl.ini
+    src: "{{ playbook_dir }}/roles/monitor_setup/templates/mpctl.yml.j2"
+    dest: /opt/monitor/conf/mpctl.yml
     owner: root
     group: root
     mode: "0640"
@@ -25,7 +26,7 @@
     name: "multipath monitor"
     minute: "*/3"
     user: root
-    job: "/opt/monitor/bin/mpctl --conf /opt/monitor/conf/mpctl.ini check > /dev/null 2>&1"
+    job: "/opt/monitor/bin/mpctl --conf /opt/monitor/conf/mpctl.yml check > /dev/null 2>&1"
     cron_file: flex-monitor-multipath
     state: present
   when: monitor_compute.on_off_status == 'on' and monitor_compute.multipath_check == 'on'
@@ -46,3 +47,51 @@
     cron_file: flex-monitor-multipath
     state: absent
   when: monitor_compute.on_off_status == 'off' or monitor_compute.multipath_check == 'off'
+
+### RAID disk monitoring
+- name: Copy raid-disk-monitor file to compute nodes
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/roles/monitor_setup/files/raid-disk-monitor"
+    dest: /opt/monitor/bin/raid-disk-monitor
+    owner: root
+    group: root
+    mode: "0755"
+  when: monitor_compute.on_off_status == 'on' and monitor_compute.raid_check == 'on'
+
+
+- name: Copy and interpolate raid-disk-monitor.yml config file
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/roles/monitor_setup/templates/raid-disk-monitor.yml.j2"
+    dest: /opt/monitor/conf/raid-disk-monitor.yml
+    owner: root
+    group: root
+    mode: "0640"
+  when: monitor_compute.on_off_status == 'on' and monitor_compute.raid_check == 'on'
+
+
+- name: Create /etc/cron.d/flex-monitor-raid-disk
+  ansible.builtin.cron:
+    name: "RAID disk monitor"
+    minute: "*/5"
+    user: root
+    job: "/opt/monitor/bin/raid-disk-monitor --conf /opt/monitor/conf/raid-disk-monitor.yml check > /dev/null 2>&1"
+    cron_file: flex-monitor-raid-disk
+    state: present
+  when: monitor_compute.on_off_status == 'on' and monitor_compute.raid_check == 'on'
+
+
+- name: Change file ownership, group and permissions
+  ansible.builtin.file:
+    path: /etc/cron.d/flex-monitor-raid-disk
+    owner: root
+    group: root
+    mode: '0755'
+  when: monitor_compute.on_off_status == 'on' and monitor_compute.raid_check == 'on'
+
+
+- name: Removes /etc/cron.d/flex-monitor-raid-disk
+  ansible.builtin.cron:
+    name: "RAID disk monitor"
+    cron_file: flex-monitor-raid-disk
+    state: absent
+  when: monitor_compute.on_off_status == 'off' or monitor_compute.multipath_raid == 'off'

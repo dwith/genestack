@@ -1,0 +1,175 @@
+#!/usr/bin/python3
+from pathlib import Path
+import subprocess
+import argparse
+import requests
+import platform
+import pprint
+import json
+import yaml
+import sys
+import re
+
+
+__AUTHOR__ = "Dan With"
+
+
+def check(show_result, config_parser):
+    help_text = '''Ctl=Controller Index|DGs=Drive groups|VDs=Virtual drives|\
+Fld=Failed|PDs=Physical drives|DNOpt=Array NotOptimal|\
+VNOpt=VD NotOptimal|Opt=Optimal|Msng=Missing|\
+Dgd=Degraded|NdAtn=Need Attention|Unkwn=Unknown|\
+sPR=Scheduled Patrol Read|DS=DimmerSwitch|\
+EHS=Emergency Spare Drive|Y=Yes|N=No|\
+ASOs=Advanced Software Options|\
+BBU=Battery backup unit/CV|Hlth=Health|\
+Safe=Safe-mode boot|\
+CertProv-Certificate Provision mode|\
+Chrg=Charging|MsngCbl=Cable Failure'''
+    diff_dict = {}
+    found = []
+    expected = []
+    chk_show_error = []
+    if (
+        show_result['Controllers'][0]['Command Status']['Status']
+        != config_parser['chk']['show']['cmd_status']['Status']
+    ):
+        chk_show_error_ = {'ERROR': 'perccli64 show J: did NOT return'}
+        chk_show_error.append(chk_show_error_)
+    if (
+        show_result['Controllers'][0]['Response Data']['Number of Controllers']
+        != int(config_parser['chk']['show']['rsp_data']['number_ctrls'])
+    ):
+        chk_show_error_ = {'ALERT': 'perccli64 show J: 0 Controllers showing'}
+        chk_show_error.append(chk_show_error_)
+    if (
+        show_result['Controllers'][0]['Response Data']['System Overview'][0]
+        != config_parser['chk']['show']['rsp_data']['sys_ovw']
+    ):
+        # Find offending values
+        for key, val in config_parser['chk']['show']['rsp_data']['sys_ovw'].items():
+            if (
+                val !=
+                show_result['Controllers'][0]['Response Data']['System Overview'][0][key]
+            ):
+                diff_val = show_result['Controllers'][0]['Response Data']['System Overview'][0][key]
+                found.append({key: diff_val})
+                expected.append({key: val})
+        diff_dict.update({'show_command_help_text': help_text})
+        diff_dict.update({'Found': found})
+        diff_dict.update({'Expected': expected})
+    # Process keys from found
+    if found:
+        drives = ['PDs', 'DGs', 'DNOpt', 'VDs', 'VNOpt', 'Hlth']
+        bbu = ['BBU']
+        for kvpair in found:
+            if kvpair.keys() in drives:
+                # continue to investigate drives (function)
+                pd_check(config_parser)
+            elif kvpair.keys() in bbu:
+                chk_show_error.append(diff_dict)
+            else:
+                chk_show_error.append(diff_dict)
+    return chk_show_error
+
+
+def pd_check(config_parser):
+    # do pd checks
+    # /opt/MegaRAID/perccli/perccli64 /c0/d1 show J
+
+    return
+
+
+def update_alert(mgrdchk, alert_status, config_parser):
+    hostname = platform.node()
+    details = "MegaRAID perccli64 Disk Alert"
+    description = "MegaRAID perccli64 output is not optimal"
+    payload_raw = {
+        "alert_data": {"alert": mgrdchk},
+        "generated_by": "Host-Monitoring",
+        "hostname": hostname,
+        "service_name": str(config_parser['chk']['alert']['service_name']),
+        "details": details,
+        "Description": description,
+        "tags": "host,compute",
+        "Title": "RAID disk alert",
+        "status": alert_status,
+        "severity": "CRITICAL",
+    }
+    payload = json.dumps(payload_raw)
+    headers = {
+        "X-Username": config_parser['chk']['alert']['username'],
+        "X-Auth-Key": config_parser['chk']['alert']['auth_key'],
+        "X-API-Key": config_parser['chk']['alert']['api_key'],
+    }
+    url = str(config_parser['chk']['alert']['url']) + "/api/new_event"
+    resp = requests.post(url, data=payload, headers=headers, verify=False)
+    resp.close()
+    return
+
+
+def parse_cmd_args(argv):
+    p = argparse.ArgumentParser(
+        prog="disk-raid-monitor",
+        description="Genestack RAID and disk monitoring",
+        epilog="=====================================",
+    )
+    p.add_argument(
+        "command_choice",
+        choices=["check"],
+        default="check",
+        help="Command choice",
+    )
+    p.add_argument(
+        "--conf",
+        "-c",
+        dest="conf",
+        default="/opt/monitor/conf/raid-disk-monitor.yml",
+        help="Specify .yml configuration file path",
+    )
+    cmd_args = p.parse_args()
+    return cmd_args
+
+
+def main():
+    argv = sys.argv[1:]
+    cmd_args = parse_cmd_args(argv)
+    conf_yml_path = cmd_args.conf
+    config_parser = ''
+    with open(conf_yml_path, "r") as yml_file:
+        config_parser = yaml.safe_load(yml_file)
+    # New stuff
+    # /opt/MegaRAID/perccli# ./perccli64 /c0 show bootdrive J
+    # opt/MegaRAID/perccli# ./perccli64 /c0 show all J
+    # { Controllers: [{"Command Status": {},"Response Data": {}}] }
+    # In "Response Data" look for "Drive Groups", "Virtual Drives", "VD LIST"
+    # "Phyisical Drives", "PD LIST"
+    # /opt/MegaRAID/perccli# ./perccli64 show J
+    # Ctl=Controller Index|DGs=Drive groups|VDs=Virtual drives|Fld=Failed
+    # PDs=Physical drives|DNOpt=Array NotOptimal|VNOpt=VD NotOptimal|Opt=Optimal
+    # Msng=Missing|Dgd=Degraded|NdAtn=Need Attention|Unkwn=Unknown
+    # sPR=Scheduled Patrol Read|DS=DimmerSwitch|EHS=Emergency Spare Drive
+    # Y=Yes|N=No|ASOs=Advanced Software Options|BBU=Battery backup unit/CV
+    # Hlth=Health|Safe=Safe-mode boot|CertProv-Certificate Provision mode
+    # Chrg=Charging | MsngCbl=Cable Failure
+    # /opt/MegaRAID/perccli# ./perccli64 /c0/d1 show all
+    # /opt/MegaRAID/perccli# ./perccli64 /c0/e64/s1 show all
+    # Check for /opt/MegaRAID/perccli/perccli64
+    megaraid_path = Path('/opt/MegaRAID/perccli/perccli64')
+    mgrdchk = ''
+    if not megaraid_path.exists():
+        mgrdchk = "MegaRAID perccli64 not found: {0}".format(str(megaraid_path))
+        alert_status = 'trigger'
+        update_alert(mgrdchk, alert_status, config_parser)
+        return
+    # find disk layout
+    result = subprocess.run(
+        [megaraid_path, 'show', 'J'], capture_output=True, text=True
+    )
+    show_result = json.loads(result.stdout)
+    check_show_data = check(show_result, config_parser)
+    return
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,10 +1,10 @@
 #!/usr/bin/python3
-import configparser
 import subprocess
 import argparse
 import requests
 import platform
 import json
+import yaml
 import sys
 import re
 
@@ -297,40 +297,18 @@ class MultipathOutput:
 def check(multipath_output, config_parser):
     vndr_chks = {}
     vendors = []
-    wp_check = str(config_parser["check"]["wp"])
-    mpath_status_check = []
-    if re.findall(",", str(config_parser["check"]["mpath_status"])):
-        mpath_status_check = [
-            str(item).strip()
-            for item in config_parser["check"]["mpath_status"].split(",")
-        ]
-    else:
-        mpath_status_check = [str(config_parser["check"]["mpath_status"])]
-    # Load policy and prio check definitions by vendor
-    if re.findall(",", str(config_parser["DEFAULT"]["vendors"])):
-        vendors = [
-            str(item).strip()
-            for item in config_parser["DEFAULT"]["vendors"].split(",")
-        ]
-    else:
-        vendors = [str(config_parser["DEFAULT"]["vendors"])]
+    wp_check = str(config_parser['check']['wp'])
+    mpath_status_check = config_parser['check']['mpath_status']
+    vendors = config_parser['vendors']
     for vendor in vendors:
         vendor_check_dict = {}
-        section = "check." + vendor
-        policy = str(config_parser[section]["policy"])
-        prio = str(config_parser[section]["prio"])
-        if re.findall(",", prio):
-            prio = [
-                str(item).strip()
-                for item in config_parser[section]["prio"].split(",")
-            ]
-        else:
-            prio = [str(config_parser[section]["prio"])]
+        policy = str(config_parser['check'][vendor]["policy"])
+        prio = config_parser['check'][vendor]["prio"]
         vendor_check_dict = {vendor: {"policy": policy, "prio": prio}}
         vndr_chks.update(vendor_check_dict)
-    dm_status_check = str(config_parser["check.status"]["dm"])
-    path_status_check = str(config_parser["check.status"]["path"])
-    online_status_check = str(config_parser["check.status"]["online"])
+    dm_status_check = str(config_parser['check']['status']['dm'])
+    path_status_check = str(config_parser['check']['status']['path'])
+    online_status_check = str(config_parser['check']['status']['online'])
     wwid_failed_data = []
     for wwid, wwid_data in multipath_output.data.items():
         path_check_failures = []
@@ -384,6 +362,9 @@ def check(multipath_output, config_parser):
                         if vendor_check_fail_count >= 1:
                             break
                         if mpth_key == "paths":
+                            if len(mpth_val) < 2:
+                                path_check_failures.append(path_key)
+                                break
                             for path in mpth_val:
                                 if len(path_check_failures) > 0:
                                     break
@@ -420,11 +401,25 @@ def update_alert(mpcd, alert_status, config_parser):
     hostname = platform.node()
     details = "Multipath device(s) have failed or have faulty paths"
     description = "Multipath device(s) have failed or have faulty paths"
+    result = subprocess.run(['lsblk', '-S'], capture_output=True, text=True)
+    lun_vol_id_map_lines = (result.stdout).splitlines()
+    if len(lun_vol_id_map_lines) > 3:
+        lun_vol_id_map_lines_data = [lun_vol_id_map_lines[0]]
+        lun_vol_id_map_lines_dev = [ line for line in lun_vol_id_map_lines[3:] ]
+        lun_vol_id_map_lines_data.extend(lun_vol_id_map_lines_dev)
+        lun_vol_id_map_keys = (lun_vol_id_map_lines_data[0]).split()
+        lun_vol_id_map_list = []
+        for line in lun_vol_id_map_lines_data[1:]:
+            values = line.split()
+            single_lun_map = dict(zip(lun_vol_id_map_keys, values))
+            lun_vol_id_map_list.append(single_lun_map)
+        lun_vol_id_map = {'lun_volume_id_map': lun_vol_id_map_list}
+        mpcd.append(lun_vol_id_map)
     payload_raw = {
         "alert_data": {"alert": mpcd},
         "generated_by": "CBS-Monitoring",
         "hostname": hostname,
-        "service_name": str(config_parser["check.alert"]["service_name"]),
+        "service_name": str(config_parser['check']['alert']['service_name']),
         "details": details,
         "Description": description,
         "tags": "host,compute-cbs,multipath",
@@ -434,11 +429,11 @@ def update_alert(mpcd, alert_status, config_parser):
     }
     payload = json.dumps(payload_raw)
     headers = {
-        "X-Username": config_parser["check.alert"]["username"],
-        "X-Auth-Key": config_parser["check.alert"]["auth_key"],
-        "X-API-Key": config_parser["check.alert"]["api_key"],
+        "X-Username": config_parser['check']['alert']['username'],
+        "X-Auth-Key": config_parser['check']['alert']['auth_key'],
+        "X-API-Key": config_parser['check']['alert']['api_key'],
     }
-    url = str(config_parser["check.alert"]["url"]) + "/api/new_event"
+    url = str(config_parser['check']['alert']['url']) + "/api/new_event"
     resp = requests.post(url, data=payload, headers=headers, verify=False)
     resp.close()
     return
@@ -469,8 +464,8 @@ def parse_cmd_args(argv):
         "--conf",
         "-c",
         dest="conf",
-        default="/root/mpctl.ini",
-        help="Specify .ini configuration file path",
+        default="/opt/monitor/conf/mpctl.yml",
+        help="Specify .yml configuration file path",
     )
     cmd_args = p.parse_args()
     return cmd_args
@@ -479,10 +474,10 @@ def parse_cmd_args(argv):
 def main():
     argv = sys.argv[1:]
     cmd_args = parse_cmd_args(argv)
-    conf_ini_path = cmd_args.conf
-    config_parser = configparser.ConfigParser()
-    with open(conf_ini_path, "r") as ini_file:
-        config_parser.read_file(ini_file)
+    conf_yml_path = cmd_args.conf
+    config_parser = ''
+    with open(conf_yml_path, "r") as yml_file:
+        config_parser = yaml.safe_load(yml_file)
     multipath_output = MultipathOutput(cmd_args)
     if cmd_args.command_choice == "check":
         wwid_failed_data = check(multipath_output, config_parser)

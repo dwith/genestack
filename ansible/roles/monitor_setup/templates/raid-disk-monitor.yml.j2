@@ -1,0 +1,57 @@
+---
+chk:
+  show:
+    cmd_status:
+      Status_Code: 0
+      Status: Success
+    rsp_data:
+      number_ctrls: 1
+      sys_ovw:
+        Ctl: 0
+        Model: PERCH755Front
+        Ports: 16
+        PDs: 6
+        DGs: 2
+        DNOpt: 0
+        VDs: 2
+        VNOpt: 0
+        BBU: Opt
+        sPR: 'On'
+        DS: '-'
+        EHS: N
+        ASOs: 0
+        Hlth: Opt
+  pd_chk:
+    VD_LIST:
+      RAID10:
+        TYPE: RAID10
+        State: Optl
+        Access: RW
+        Consist: Yes
+        Cache: RWBD
+        DG_Drive_LIST:
+          State: Onln
+          Intf: SAS
+          Med: SSD
+          SED: N 
+          Size: '3.492 TB'
+        Total_Drive_Count: 4
+      RAID1:
+        TYPE: RAID1
+        State: Optl
+        Access: RW
+        Consist: Yes
+        Cache: RWBD
+        DG_Drive_LIST:
+          State: Onln
+          Intf: SATA
+          Med: SSD
+          SED: N
+          Size: '893.750 GB'
+        Total_Drive_Count: 2
+  alert:
+    url: {{ monitor_url }}
+    auth_key: {{ monitor_auth_key }}
+    api_key: {{ monitor_api_key }}
+    username: {{ monitor_username }}
+    service_name: RAID-disk-alert
