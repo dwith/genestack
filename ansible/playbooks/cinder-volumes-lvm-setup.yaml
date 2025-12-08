@@ -1,0 +1,28 @@
+---
+- name: Setup PV/VG cinder-volumes-1 on Cinder storage nodes
+  hosts: cinder_storage_nodes
+  gather_facts: true
+  become: true
+  vars:
+    data_disk_for_pv: /dev/vdd
+    vg_name: cinder-volumes-1
+  tasks:
+    - name: Install required packages
+      ansible.builtin.package:
+        name:
+          - build-essential
+          - git
+          - lvm2
+        state: present
+        update_cache: true
+
+    - name: Create physical volume if device exists
+      community.general.lvm_pv:
+        device: "{{ data_disk_for_pv }}"
+        state: present
+
+    - name: Create volume group
+      community.general.lvg:
+        vg: "{{ vg_name }}"
+        pvs: "{{ data_disk_for_pv }}"
+        pesize: 256

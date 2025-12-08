@@ -62,20 +62,30 @@ fi
 portDelete ${LAB_NAME_PREFIX}-2-compute-port
 portDelete ${LAB_NAME_PREFIX}-1-compute-port
 portDelete ${LAB_NAME_PREFIX}-0-compute-port
-for i in {100..109}; do
+for i in {100..112}; do
   portDelete "${LAB_NAME_PREFIX}-0-compute-float-${i}-port"
+done
+portDelete ${LAB_NAME_PREFIX}-2-manila-port
+portDelete ${LAB_NAME_PREFIX}-1-manila-port
+portDelete ${LAB_NAME_PREFIX}-0-manila-port
+for i in {100..112}; do
+  portDelete "${LAB_NAME_PREFIX}-0-manila-float-${i}-port"
 done
 portDelete ${LAB_NAME_PREFIX}-2-mgmt-port
 portDelete ${LAB_NAME_PREFIX}-1-mgmt-port
 portDelete ${LAB_NAME_PREFIX}-0-mgmt-port
 portDelete ${LAB_NAME_PREFIX}-metallb-vip-0-port
 
+securityGroupDelete ${LAB_NAME_PREFIX}-manila-secgroup
 securityGroupDelete ${LAB_NAME_PREFIX}-jump-secgroup
 securityGroupDelete ${LAB_NAME_PREFIX}-http-secgroup
 securityGroupDelete ${LAB_NAME_PREFIX}-secgroup
 
 if ! openstack router remove subnet ${LAB_NAME_PREFIX}-router ${LAB_NAME_PREFIX}-subnet 2> /dev/null; then
   echo "Failed to remove ${LAB_NAME_PREFIX}-subnet from router ${LAB_NAME_PREFIX}-router"
+fi
+if ! openstack router remove subnet ${LAB_NAME_PREFIX}-router ${LAB_NAME_PREFIX}-manila-subnet 2> /dev/null; then
+  echo "Failed to remove ${LAB_NAME_PREFIX}-manila-subnet from router ${LAB_NAME_PREFIX}-router"
 fi
 if ! openstack router remove subnet ${LAB_NAME_PREFIX}-router ${LAB_NAME_PREFIX}-compute-subnet 2> /dev/null; then
   echo "Failed to remove ${LAB_NAME_PREFIX}-compute-subnet from router ${LAB_NAME_PREFIX}-router"
@@ -87,9 +97,11 @@ if ! openstack router delete ${LAB_NAME_PREFIX}-router 2> /dev/null; then
   echo "Failed to delete router ${LAB_NAME_PREFIX}-router"
 fi
 
+subnetDelete ${LAB_NAME_PREFIX}-manila-subnet
 subnetDelete ${LAB_NAME_PREFIX}-compute-subnet
 subnetDelete ${LAB_NAME_PREFIX}-subnet
 
+networkDelete ${LAB_NAME_PREFIX}-manila-net
 networkDelete ${LAB_NAME_PREFIX}-compute-net
 networkDelete ${LAB_NAME_PREFIX}-net
 

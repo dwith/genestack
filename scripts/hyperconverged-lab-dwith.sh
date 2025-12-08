@@ -4,7 +4,7 @@
 set -o pipefail
 set -e
 SECONDS=0
-RUN_EXTRAS=1
+RUN_EXTRAS=0
 INCLUDE_LIST=()
 EXCLUDE_LIST=()
 
@@ -21,14 +21,15 @@ if ! yq --version 2> /dev/null; then
 fi
 
 
-# Default components file
+# Default openstack components file
+# this controls which openstack service will be installed
 ##...needed until default config is upstream...
 OS_CONFIG="
 components:
   keystone: true
   glance: true
   heat: false
-  barbican: true
+  barbican: false
   blazar: false
   cloudkitty: false
   cinder: true
@@ -43,6 +44,7 @@ components:
   ceilometer: false
   gnocchi: false
   skyline: true
+  zaqar: false
 "
 echo -e "$OS_CONFIG" > $PWD/openstack-components.yaml
 
@@ -90,13 +92,6 @@ if [ -z "${ACME_EMAIL}" ]; then
   export ACME_EMAIL="${ACME_EMAIL:-}"
 fi
 
-if [ -z "${OS_SHARE_API_VERSION}" ]; then
-  echo "The os-share-api-version is required, if you do not have an os-share-api-version name press enter to use the default"
-  read -rp "Enter the share-api-version: " OS_SHARE_API_VERSION
-  export OS_SHARE_API_VERSION="${OS_SHARE_API_VERSION:-cluster.local}"
-fi
-
-
 if [ -z "${GATEWAY_DOMAIN}" ]; then
   echo "The domain name for the gateway is required, if you do not have a domain name press enter to use the default"
   read -rp "Enter the domain name for the gateway [cluster.local]: " GATEWAY_DOMAIN
@@ -138,16 +133,17 @@ fi
 
 export LAB_NAME_PREFIX="${LAB_NAME_PREFIX:-hyperconverged}"
 
+export LAB_NETWORK_MTU="${LAB_NETWORK_MTU:-1500}"
+
 if ! openstack router show ${LAB_NAME_PREFIX}-router 2>/dev/null; then
   openstack router create ${LAB_NAME_PREFIX}-router --external-gateway PUBLICNET
 fi
 
-#### Tenant net
 if ! openstack network show ${LAB_NAME_PREFIX}-net 2>/dev/null; then
-  openstack network create ${LAB_NAME_PREFIX}-net
+  openstack network create ${LAB_NAME_PREFIX}-net \
+    --mtu ${LAB_NETWORK_MTU}
 fi
 
-#### Tenant subnet
 if ! TENANT_SUB_NETWORK_ID=$(openstack subnet show ${LAB_NAME_PREFIX}-subnet -f json 2>/dev/null | jq -r '.id'); then
   echo "Creating the ${LAB_NAME_PREFIX}-subnet"
   TENANT_SUB_NETWORK_ID=$(
@@ -164,37 +160,11 @@ if ! openstack router show ${LAB_NAME_PREFIX}-router -f json 2>/dev/null | jq -r
   openstack router add subnet ${LAB_NAME_PREFIX}-router ${LAB_NAME_PREFIX}-subnet
 fi
 
-#### Manila net
-
-if ! openstack network show ${LAB_NAME_PREFIX}-manila-net 2>/dev/null; then
-  openstack network create ${LAB_NAME_PREFIX}-manila-net \
-    --disable-port-security
-fi
-
-#### Manila subnet
-if ! MANILA_SUB_NETWORK_ID=$(openstack subnet show ${LAB_NAME_PREFIX}-manila-subnet -f json 2>/dev/null | jq -r '.id'); then
-  echo "Creating the ${LAB_NAME_PREFIX}-manila-subnet"
-  MANILA_SUB_NETWORK_ID=$(
-    openstack subnet create ${LAB_NAME_PREFIX}-manila-subnet \
-      --network ${LAB_NAME_PREFIX}-manila-net \
-      --subnet-range 192.168.10.0/24 \
-      --no-dhcp \
-      -f json | jq -r '.id'
-  )
-fi
-
-if ! openstack router show ${LAB_NAME_PREFIX}-router -f json 2>/dev/null | jq -r '.interfaces_info.[].subnet_id' | grep -q ${MANILA_SUB_NETWORK_ID}; then
-  openstack router add subnet ${LAB_NAME_PREFIX}-router ${LAB_NAME_PREFIX}-manila-subnet
-fi
-
-#### Compute net
-
 if ! openstack network show ${LAB_NAME_PREFIX}-compute-net 2>/dev/null; then
   openstack network create ${LAB_NAME_PREFIX}-compute-net \
-    --disable-port-security
+    --disable-port-security \
+    --mtu ${LAB_NETWORK_MTU}
 fi
-
-#### Compute subnet
 
 if ! TENANT_COMPUTE_SUB_NETWORK_ID=$(openstack subnet show ${LAB_NAME_PREFIX}-compute-subnet -f json 2>/dev/null | jq -r '.id'); then
   echo "Creating the ${LAB_NAME_PREFIX}-compute-subnet"
@@ -231,20 +201,6 @@ if ! openstack security group show ${LAB_NAME_PREFIX}-http-secgroup -f json 2>/d
     --description "http"
 fi
 
-#### Security Group for Manila subnet
-if ! openstack security group show ${LAB_NAME_PREFIX}-manila-secgroup 2>/dev/null; then
-  openstack security group create ${LAB_NAME_PREFIX}-manila-secgroup
-fi
-
-if ! openstack security group show ${LAB_NAME_PREFIX}-manila-secgroup -f json 2>/dev/null | jq -r '.rules.[].description' | grep -q "all Manila internal traffic"; then
-  openstack security group rule create ${LAB_NAME_PREFIX}-manila-secgroup \
-    --protocol any \
-    --ingress \
-    --remote-ip 192.168.10.0/24 \
-    --description "all Manila internal traffic"
-fi
-
-#### Security Group for tenant subnet
 if ! openstack security group show ${LAB_NAME_PREFIX}-secgroup 2>/dev/null; then
   openstack security group create ${LAB_NAME_PREFIX}-secgroup
 fi
@@ -257,7 +213,6 @@ if ! openstack security group show ${LAB_NAME_PREFIX}-secgroup -f json 2>/dev/nu
     --description "all internal traffic"
 fi
 
-#### Security Group for Jump Server
 if ! openstack security group show ${LAB_NAME_PREFIX}-jump-secgroup 2>/dev/null; then
   openstack security group create ${LAB_NAME_PREFIX}-jump-secgroup
 fi
@@ -292,7 +247,6 @@ elif [ -z "${METAL_LB_VIP}" ]; then
   METAL_LB_VIP=$(openstack floating ip create PUBLICNET --port ${METAL_LB_PORT_ID} -f json | jq -r '.floating_ip_address')
 fi
 
-#### MGMT Ports
 if ! WORKER_0_PORT=$(openstack port show ${LAB_NAME_PREFIX}-0-mgmt-port -f value -c id 2>/dev/null); then
   export WORKER_0_PORT=$(
     openstack port create --allowed-address ip-address=${METAL_LB_IP} \
@@ -336,57 +290,8 @@ elif [ -z "${JUMP_HOST_VIP}" ]; then
   JUMP_HOST_VIP=$(openstack floating ip create PUBLICNET --port ${WORKER_0_PORT} -f json | jq -r '.floating_ip_address')
 fi
 
-#### Manila Ports
-
-echo "Creating pre-defined manila ports for the flat manila test network"
-for i in {100..112}; do
-  if ! openstack port show ${LAB_NAME_PREFIX}-0-manila-float-${i}-port 2>/dev/null; then
-    openstack port create --network ${LAB_NAME_PREFIX}-manila-net \
-      --disable-port-security \
-      --fixed-ip ip-address="192.168.10.${i}" \
-      ${LAB_NAME_PREFIX}-0-manila-float-${i}-port
-  fi
-done
-
-if ! MANILA_0_PORT=$(openstack port show ${LAB_NAME_PREFIX}-0-manila-port -f value -c id 2>/dev/null); then
-  export MANILA_0_PORT=$(
-    openstack port create --network ${LAB_NAME_PREFIX}-manila-net \
-      --no-fixed-ip \
-      --disable-port-security \
-      -f value \
-      -c id \
-      ${LAB_NAME_PREFIX}-0-manila-port
-  )
-fi
-
-if ! MANILA_1_PORT=$(openstack port show ${LAB_NAME_PREFIX}-1-manila-port -f value -c id 2>/dev/null); then
-  export MANILA_1_PORT=$(
-    openstack port create --network ${LAB_NAME_PREFIX}-manila-net \
-      --no-fixed-ip \
-      --disable-port-security \
-      -f value \
-      -c id \
-      ${LAB_NAME_PREFIX}-1-manila-port
-  )
-fi
-
-if ! MANILA_2_PORT=$(openstack port show ${LAB_NAME_PREFIX}-2-manila-port -f value -c id 2>/dev/null); then
-  export MANILA_2_PORT=$(
-    openstack port create --network ${LAB_NAME_PREFIX}-manila-net \
-      --no-fixed-ip \
-      --disable-port-security \
-      -f value \
-      -c id \
-      ${LAB_NAME_PREFIX}-2-manila-port
-  )
-fi
-
-
-##################
-sleep 1
-
 echo "Creating pre-defined compute ports for the flat test network"
-for i in {100..112}; do
+for i in {100..109}; do
   if ! openstack port show ${LAB_NAME_PREFIX}-0-compute-float-${i}-port 2>/dev/null; then
     openstack port create --network ${LAB_NAME_PREFIX}-compute-net \
       --disable-port-security \
@@ -394,8 +299,6 @@ for i in {100..112}; do
       ${LAB_NAME_PREFIX}-0-compute-float-${i}-port
   fi
 done
-
-sleep 1
 
 if ! COMPUTE_0_PORT=$(openstack port show ${LAB_NAME_PREFIX}-0-compute-port -f value -c id 2>/dev/null); then
   export COMPUTE_0_PORT=$(
@@ -408,7 +311,6 @@ if ! COMPUTE_0_PORT=$(openstack port show ${LAB_NAME_PREFIX}-0-compute-port -f v
   )
 fi
 
-
 if ! COMPUTE_1_PORT=$(openstack port show ${LAB_NAME_PREFIX}-1-compute-port -f value -c id 2>/dev/null); then
   export COMPUTE_1_PORT=$(
     openstack port create --network ${LAB_NAME_PREFIX}-compute-net \
@@ -419,7 +321,6 @@ if ! COMPUTE_1_PORT=$(openstack port show ${LAB_NAME_PREFIX}-1-compute-port -f v
       ${LAB_NAME_PREFIX}-1-compute-port
   )
 fi
-
 
 if ! COMPUTE_2_PORT=$(openstack port show ${LAB_NAME_PREFIX}-2-compute-port -f value -c id 2>/dev/null); then
   export COMPUTE_2_PORT=$(
@@ -432,19 +333,15 @@ if ! COMPUTE_2_PORT=$(openstack port show ${LAB_NAME_PREFIX}-2-compute-port -f v
   )
 fi
 
-sleep 1
-
 if [ ! -d "~/.ssh" ]; then
   echo "Creating the SSH directory"
   mkdir -p ~/.ssh
   chmod 700 ~/.ssh
 fi
-
 if ! openstack keypair show ${LAB_NAME_PREFIX}-key 2>/dev/null; then
   if [ ! -f ~/.ssh/${LAB_NAME_PREFIX}-key.pem ]; then
     openstack keypair create ${LAB_NAME_PREFIX}-key >~/.ssh/${LAB_NAME_PREFIX}-key.pem
     chmod 600 ~/.ssh/${LAB_NAME_PREFIX}-key.pem
-    sleep 1
     openstack keypair show ${LAB_NAME_PREFIX}-key --public-key >~/.ssh/${LAB_NAME_PREFIX}-key.pub
   else
     if [ -f ~/.ssh/${LAB_NAME_PREFIX}-key.pub ]; then
@@ -457,165 +354,44 @@ fi
 
 # Create the three lab instances
 if ! openstack server show ${LAB_NAME_PREFIX}-0 2>/dev/null; then
-  sleep 1
   openstack server create ${LAB_NAME_PREFIX}-0 \
     --port ${WORKER_0_PORT} \
     --port ${COMPUTE_0_PORT} \
-    --port ${MANILA_0_PORT} \
     --image "${OS_IMAGE}" \
     --key-name ${LAB_NAME_PREFIX}-key \
     --flavor ${OS_FLAVOR}
-fi
-
-if ! openstack volume show ${LAB_NAME_PREFIX}-0-cv1 2>/dev/null; then
-  openstack volume create \
-    --size 150 \
-    --type HA-Performance \
-    --description "cinder-volumes-1 on ${LAB_NAME_PREFIX}-0" \
-    ${LAB_NAME_PREFIX}-0-cv1
 fi
 
 if ! openstack server show ${LAB_NAME_PREFIX}-1 2>/dev/null; then
-  sleep 1
   openstack server create ${LAB_NAME_PREFIX}-1 \
     --port ${WORKER_1_PORT} \
     --port ${COMPUTE_1_PORT} \
-    --port ${MANILA_1_PORT} \
     --image "${OS_IMAGE}" \
     --key-name ${LAB_NAME_PREFIX}-key \
     --flavor ${OS_FLAVOR}
-fi
-
-if ! openstack volume show ${LAB_NAME_PREFIX}-1-cv1 2>/dev/null; then
-  openstack volume create \
-    --size 150 \
-    --type HA-Performance \
-    --description "cinder-volumes-1 on ${LAB_NAME_PREFIX}-1" \
-    ${LAB_NAME_PREFIX}-1-cv1
 fi
 
 if ! openstack server show ${LAB_NAME_PREFIX}-2 2>/dev/null; then
   openstack server create ${LAB_NAME_PREFIX}-2 \
     --port ${WORKER_2_PORT} \
     --port ${COMPUTE_2_PORT} \
-    --port ${MANILA_2_PORT} \
     --image "${OS_IMAGE}" \
     --key-name ${LAB_NAME_PREFIX}-key \
     --flavor ${OS_FLAVOR}
 fi
 
-if ! openstack volume show ${LAB_NAME_PREFIX}-2-cv1 2>/dev/null; then
-  openstack volume create \
-    --size 150 \
-    --type HA-Performance \
-    --description "cinder-volumes-1 on ${LAB_NAME_PREFIX}-2" \
-    ${LAB_NAME_PREFIX}-2-cv1
-fi
-
-sleep 2
-
-READY_COUNT=0
-while [[ ! $(openstack volume show ${LAB_NAME_PREFIX}-0-cv1 -f yaml | yq '.status') =~ ^(available|in-use)$ ]]; do
-  sleep 0.2
-  echo "Data volume is not ready, Trying again..."
-  READY_COUNT=$((READY_COUNT + 1))
-  if [ $READY_COUNT -gt 200 ]; then
-    echo "Volume: ${LAB_NAME_PREFIX}-0-cv1 not built"
-    exit 1
-  fi
-done
-
-READY_COUNT=0
-while [[ ! $(openstack volume show ${LAB_NAME_PREFIX}-1-cv1 -f yaml | yq '.status') =~ ^(available|in-use)$ ]]; do
-  sleep 0.2
-  echo "Data volume is not ready, Trying again..."
-  READY_COUNT=$((READY_COUNT + 1))
-  if [ $READY_COUNT -gt 200 ]; then
-    echo "Volume: ${LAB_NAME_PREFIX}-1-cv1 not built"
-    exit 1
-  fi
-done
-
-READY_COUNT=0
-while [[ ! $(openstack volume show ${LAB_NAME_PREFIX}-2-cv1 -f yaml | yq '.status') =~ ^(available|in-use)$ ]]; do
-  sleep 0.2
-  echo "Data volume is not ready, Trying again..."
-  READY_COUNT=$((READY_COUNT + 1))
-  if [ $READY_COUNT -gt 200 ]; then
-    echo "Volume: ${LAB_NAME_PREFIX}-2-cv1 not built"
-    exit 1
-  fi
-done
-
 echo "Waiting for the jump host to be ready"
 COUNT=0
 while ! ssh -F ~/.ssh/hyperconverged-${OS_CLOUD}.config -i ~/.ssh/hyperconverged-key.pem -o ConnectTimeout=2 -o ConnectionAttempts=3 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -q ${SSH_USERNAME}@${JUMP_HOST_VIP} exit; do
+  sleep 2
   echo "SSH is not ready, Trying again..."
   COUNT=$((COUNT + 1))
-  if [ $COUNT -gt 150 ]; then
+  if [ $COUNT -gt 60 ]; then
     echo "Failed to ssh into the jump host"
     exit 1
   fi
 done
 
-READY_COUNT=0
-while [ $(openstack server show ${LAB_NAME_PREFIX}-0 -f yaml | yq '.status') != 'ACTIVE' ]; do
-  echo "Server instance is not ready, waiting..."
-  READY_COUNT=$((READY_COUNT + 1))
-  if [ $READY_COUNT -gt 200 ]; then
-    echo "VM: ${LAB_NAME_PREFIX}-0 never built"
-    exit 1
-  fi
-done
-
-if [ $(openstack volume show ${LAB_NAME_PREFIX}-0-cv1 -f yaml | yq '.status') == 'available' ]; then
-  openstack server add volume \
-    --enable-delete-on-termination \
-    ${LAB_NAME_PREFIX}-0 \
-    ${LAB_NAME_PREFIX}-0-cv1
-fi
-
-
-READY_COUNT=0
-while [ $(openstack server show ${LAB_NAME_PREFIX}-1 -f yaml | yq '.status') != 'ACTIVE' ]; do
-  echo "Server instance is not ready, waiting..."
-  READY_COUNT=$((READY_COUNT + 1))
-  if [ $READY_COUNT -gt 200 ]; then
-    echo "VM: ${LAB_NAME_PREFIX}-1 never built"
-    exit 1
-  fi
-done
-
-if [ $(openstack volume show ${LAB_NAME_PREFIX}-1-cv1 -f yaml | yq '.status') == 'available' ]; then
-  openstack server add volume \
-    --enable-delete-on-termination \
-    ${LAB_NAME_PREFIX}-1 \
-    ${LAB_NAME_PREFIX}-1-cv1
-fi
-
-
-READY_COUNT=0
-while [ $(openstack server show ${LAB_NAME_PREFIX}-2 -f yaml | yq '.status') != 'ACTIVE' ]; do
-  echo "Server instance is not ready, waiting..."
-  READY_COUNT=$((READY_COUNT + 1))
-  if [ $READY_COUNT -gt 200 ]; then
-    echo "VM: ${LAB_NAME_PREFIX}-2 never built"
-    exit 1
-  fi
-done
-
-
-if [ $(openstack volume show ${LAB_NAME_PREFIX}-2-cv1 -f yaml | yq '.status') == 'available' ]; then
-  openstack server add volume \
-    --enable-delete-on-termination \
-    ${LAB_NAME_PREFIX}-2 \
-    ${LAB_NAME_PREFIX}-2-cv1
-fi
-
-sleep 2
-
-
-echo "Run bootstrap"
 # Run bootstrap
 if [ "${HYPERCONVERGED_DEV:-false}" = "true" ]; then
   export SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
@@ -623,48 +399,16 @@ if [ "${HYPERCONVERGED_DEV:-false}" = "true" ]; then
     echo "HYPERCONVERGED_DEV is true, but we've failed to determine the base genestack directory"
     exit 1
   fi
+  # NOTE: (brew) we are assuming an Ubunut (apt) based instance here
   ssh -F ~/.ssh/hyperconverged-${OS_CLOUD}.config -i ~/.ssh/hyperconverged-key.pem -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${SSH_USERNAME}@${JUMP_HOST_VIP} \
   "while sudo fuser /var/{lib/{dpkg,apt/lists},cache/apt/archives}/lock >/dev/null 2>&1; do echo 'Waiting for apt locks to be released...'; sleep 5; done && sudo apt-get update && sudo apt install -y rsync git"
   echo "Copying the development source code to the jump host"
   rsync -az \
-    -e "ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no" \
+    -e "ssh -F ~/.ssh/hyperconverged-${OS_CLOUD}.config -i ~/.ssh/hyperconverged-key.pem -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no" \
     --rsync-path="sudo rsync" \
     $(readlink -fn ${SCRIPT_DIR}/../) ${SSH_USERNAME}@${JUMP_HOST_VIP}:/opt/
 fi
 
-ssh -F ~/.ssh/hyperconverged-${OS_CLOUD}.config -i ~/.ssh/hyperconverged-key.pem -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${SSH_USERNAME}@${JUMP_HOST_VIP} 'sudo tee /home/ubuntu/.ssh/config' <<'EOC'
-Host *
-    User ubuntu
-    ForwardAgent yes
-    ForwardX11Trusted yes
-    AddKeysToAgent yes
-    IdentityFile /home/ubuntu/.ssh/hyperconverged-key.pem
-    ProxyCommand none
-    TCPKeepAlive yes
-    ServerAliveInterval 300
-    Ciphers aes128-ctr,aes192-ctr,aes256-ctr,aes128-cbc,3des-cbc
-    MACs hmac-sha2-512,hmac-sha2-256,hmac-md5,hmac-sha1,umac-64@openssh.com
-    KexAlgorithms +diffie-hellman-group1-sha1
-EOC
-
-ssh -F ~/.ssh/hyperconverged-${OS_CLOUD}.config -i ~/.ssh/hyperconverged-key.pem -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${SSH_USERNAME}@${JUMP_HOST_VIP} 'sudo tee /home/ubuntu/.ssh/hyperconverged-key.pem' <<'EOC'
------BEGIN OPENSSH PRIVATE KEY-----
-b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZWQyNTUx
-OQAAACBR6IGktspR9KT+Jm+gJxka906Z2N/MSN9PMzqPBmk6HQAAAIhPkfyZT5H8mQAAAAtzc2gt
-ZWQyNTUxOQAAACBR6IGktspR9KT+Jm+gJxka906Z2N/MSN9PMzqPBmk6HQAAAEA7FbEr3FOdfLHT
-kZill2wZX77W6NQ8sJuO9tYD43sHo1HogaS2ylH0pP4mb6AnGRr3TpnY38xI308zOo8GaTodAAAA
-AAECAwQF
------END OPENSSH PRIVATE KEY-----
-EOC
-
-ssh -F ~/.ssh/hyperconverged-${OS_CLOUD}.config -i ~/.ssh/hyperconverged-key.pem -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${SSH_USERNAME}@${JUMP_HOST_VIP} 'sudo tee /home/ubuntu/.ssh/hyperconverged-key.pub' <<'EOC'
-ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFHogaS2ylH0pP4mb6AnGRr3TpnY38xI308zOo8GaTod
-EOC
-
-ssh -F ~/.ssh/hyperconverged-${OS_CLOUD}.config -i ~/.ssh/hyperconverged-key.pem -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${SSH_USERNAME}@${JUMP_HOST_VIP} \
-"sudo chmod 600 /home/ubuntu/.ssh/hyperconverged-key.pem;sudo chmod 644 /home/ubuntu/.ssh/hyperconverged-key.pub; sudo chown -R ubuntu:ubuntu /home/ubuntu/.ssh/"
-
-echo "Copy configs"
 ssh -F ~/.ssh/hyperconverged-${OS_CLOUD}.config -i ~/.ssh/hyperconverged-key.pem -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${SSH_USERNAME}@${JUMP_HOST_VIP} <<EOC
 set -e
 if [ ! -d "/opt/genestack" ]; then
@@ -759,20 +503,7 @@ all:
             storage_network_multipath: false
           children:
             cinder_storage_nodes:
-              hosts:
-                ${LAB_NAME_PREFIX}-0.${GATEWAY_DOMAIN}: null
-                ${LAB_NAME_PREFIX}-1.${GATEWAY_DOMAIN}: null
-                ${LAB_NAME_PREFIX}-2.${GATEWAY_DOMAIN}: null
-            manila_storage_nodes:
-              hosts:
-                ${LAB_NAME_PREFIX}-0.${GATEWAY_DOMAIN}: null
-                ${LAB_NAME_PREFIX}-1.${GATEWAY_DOMAIN}: null
-                ${LAB_NAME_PREFIX}-2.${GATEWAY_DOMAIN}: null
-            manila_share_nodes:
-              hosts:
-                ${LAB_NAME_PREFIX}-0.${GATEWAY_DOMAIN}: null
-                ${LAB_NAME_PREFIX}-1.${GATEWAY_DOMAIN}: null
-                ${LAB_NAME_PREFIX}-2.${GATEWAY_DOMAIN}: null
+              hosts: {}
           hosts:
             ${LAB_NAME_PREFIX}-0.${GATEWAY_DOMAIN}: null
             ${LAB_NAME_PREFIX}-1.${GATEWAY_DOMAIN}: null
@@ -797,6 +528,14 @@ all:
 EOF
 fi
 
+# Service Configurqation Section
+#
+if [ ! -f "/etc/genestack/helm-configs/envoyproxy-gateway/envoyproxy-gateway-helm-overrides.yaml" ]; then
+cat > /etc/genestack/helm-configs/envoyproxy-gateway/envoyproxy-gateway-helm-overrides.yaml <<EOF
+---
+EOF
+fi
+
 if [ ! -f "/etc/genestack/helm-configs/barbican/barbican-helm-overrides.yaml" ]; then
 cat > /etc/genestack/helm-configs/barbican/barbican-helm-overrides.yaml <<EOF
 ---
@@ -807,7 +546,7 @@ pod:
 conf:
   barbican_api_uwsgi:
     uwsgi:
-      processes: 4
+      processes: 1
   barbican:
     oslo_messaging_notifications:
       driver: noop
@@ -834,62 +573,18 @@ fi
 if [ ! -f "/etc/genestack/helm-configs/cinder/cinder-helm-overrides.yaml" ]; then
 cat > /etc/genestack/helm-configs/cinder/cinder-helm-overrides.yaml <<EOF
 ---
-images:
-  tags:
-    bootstrap: "ghcr.io/rackerlabs/genestack-images/heat:2024.1-1754784075"
-    cinder_api: "ghcr.io/rackerlabs/genestack-images/cinder:2024.1-1754785862"
-    cinder_backup: "ghcr.io/rackerlabs/genestack-images/cinder:2024.1-1754785862"
-    cinder_backup_storage_init: "quay.io/rackspace/rackerlabs-ceph-config-helper:latest-ubuntu_jammy"
-    cinder_db_sync: "ghcr.io/rackerlabs/genestack-images/cinder:2024.1-1754785862"
-    cinder_scheduler: "ghcr.io/rackerlabs/genestack-images/cinder:2024.1-1754785862"
-    cinder_storage_init: "quay.io/rackspace/rackerlabs-ceph-config-helper:latest-ubuntu_jammy"
-    cinder_volume: "ghcr.io/rackerlabs/genestack-images/cinder:2024.1-1754785862"
-    cinder_volume_usage_audit: "ghcr.io/rackerlabs/genestack-images/cinder:2024.1-1754785862"
-    db_drop: "ghcr.io/rackerlabs/genestack-images/heat:2024.1-1754784075"
-    db_init: "ghcr.io/rackerlabs/genestack-images/heat:2024.1-1754784075"
-    dep_check: "ghcr.io/rackerlabs/genestack-images/kubernetes-entrypoint:latest"
-    ks_endpoints: "ghcr.io/rackerlabs/genestack-images/heat:2024.1-1754784075"
-    ks_service: "ghcr.io/rackerlabs/genestack-images/heat:2024.1-1754784075"
-    ks_user: "ghcr.io/rackerlabs/genestack-images/heat:2024.1-1754784075"
 pod:
   resources:
-    enabled: true
-    api:
-      requests:
-        cpu: "1"
-        memory: "1Gi"
-      limits:
-        cpu: "2"
-        memory: "2Gi"
-    scheduler:
-      requests:
-        cpu: "1"
-        memory: "1Gi"
-      limits:
-        cpu: "2"
-        memory: "2Gi"
+    enabled: false
 conf:
-# NOTE: (brew) uncomment to change default log level from INFO
-#  logging:
-#    logger_cinder:
-#      level: DEBUG
-#      handlers: stdout
-  policy:
-    "volume_extension:types_extra_specs:read_sensitive": "rule:xena_system_admin_or_project_reader"
   cinder:
     DEFAULT:
-      osapi_volume_workers: 2
-      rpc_response_timeout: 300
-      enabled_backends: "lvmdriver-1"
-      default_volume_type: "Standard"
-      default_availability_zone: "az1"
-  backends:
-    # Those options will be written to backends.conf as-is.
-    lvmdriver-1:
-      volume_clear_size: 128
+      osapi_volume_workers: 1
+    oslo_messaging_notifications:
+      driver: noop
   cinder_api_uwsgi:
     uwsgi:
-      processes: 2
+      processes: 1
       threads: 1
 EOF
 fi
@@ -952,7 +647,7 @@ conf:
       driver: noop
   heat_api_cfn_uwsgi:
     uwsgi:
-      processes: 2
+      processes: 1
       threads: 1
   heat_api_uwsgi:
     uwsgi:
@@ -970,7 +665,7 @@ pod:
 conf:
   keystone_api_wsgi:
     wsgi:
-      processes: 4
+      processes: 1
       threads: 1
   keystone:
     oslo_messaging_notifications:
@@ -987,9 +682,9 @@ pod:
 conf:
   neutron:
     DEFAULT:
-      api_workers: 2
-      rpc_workers: 2
-      rpc_state_report_workers: 2
+      api_workers: 1
+      rpc_workers: 1
+      rpc_state_report_workers: 1
     oslo_messaging_notifications:
       driver: noop
 EOF
@@ -1006,199 +701,6 @@ conf:
     uwsgi:
       processes: 1
       threads: 1
-EOF
-fi
-
-if [ ! -f "/etc/genestack/helm-configs/manila/manila-helm-overrides.yaml" ]; then
-cat > /etc/genestack/helm-configs/manila/manila-helm-overrides.yaml <<EOF
----
-images:
-  tags:
-    db_init: "ghcr.io/rackerlabs/genestack-images/heat:2024.1-latest"
-    db_sync: "ghcr.io/rackerlabs/genestack-images/heat:2024.1-latest"
-    db_drop: "ghcr.io/rackerlabs/genestack-images/heat:2024.1-latest"
-    dep_check: "ghcr.io/rackerlabs/genestack-images/kubernetes-entrypoint:latest"
-    image_repo_sync: "docker.io/docker:17.07.0"
-    ks_endpoints: "ghcr.io/rackerlabs/genestack-images/heat:2024.1-latest"
-    ks_service: "ghcr.io/rackerlabs/genestack-images/heat:2024.1-latest"
-    ks_user: "ghcr.io/rackerlabs/genestack-images/heat:2024.1-latest"
-    manila: "ghcr.io/dwith/genestack-images/manila:2024.1-1764094752"
-    manila_api: "ghcr.io/dwith/genestack-images/manila:2024.1-1764094752"
-    manila_data:  "ghcr.io/dwith/genestack-images/manila:2024.1-1764094752"
-    manila_db_sync:  "ghcr.io/dwith/genestack-images/manila:2024.1-1764094752"
-    manila_scheduler: "ghcr.io/dwith/genestack-images/manila:2024.1-1764094752"
-    manila_share: "ghcr.io/dwith/genestack-images/manila:2024.1-1764094752"
-    manila_processor: "ghcr.io/dwith/genestack-images/manila:2024.1-1764094752"
-    manila_storage_init: "ghcr.io/dwith/genestack-images/manila:2024.1-1764094752"
-    rabbit_init: "docker.io/rabbitmq:3.13-management"
-  pull_policy: "IfNotPresent"
-
-# NOTE: (brew) requests cpu/mem values based on a three node
-# hyperconverged lab (/scripts/hyperconverged-lab.sh).
-# limit values based on defaults from the openstack-helm charts unless defined
-pod:
-  replicas:
-    api: 1
-    data: 1
-    scheduler: 1
-    share: 1
-  lifecycle:
-    upgrades:
-      deployments:
-        rolling_update:
-          max_unavailable: 20%
-  resources:
-    enabled: true
-    api:
-      requests:
-        memory: "256Mi"
-        cpu: "400m"
-      limits:
-        memory: "2048Mi"
-        cpu: "2000m"
-    data:
-      requests:
-        memory: "256Mi"
-        cpu: "400m"
-      limits:
-        memory: "2048Mi"
-        cpu: "2000m"
-    scheduler:
-      requests:
-        memory: "256Mi"
-        cpu: "200m"
-      limits:
-        memory: "1024Mi"
-        cpu: "1000m"
-    share:
-      requests:
-        memory: "256Mi"
-        cpu: "200m"
-      limits:
-        memory: "2048Mi"
-        cpu: "2000m"
-
-bootstrap:
-  enabled: false
-  ks_user: admin
-  script: null
-  structured:
-    flavors:
-      manila-service-flavor:
-        id: 704cc650-9c22-46f0-b3cd-ac0fc2b4bffa
-        name: "m1.medium"
-        ram: 2048
-        vcpus: 2
-        disk: 40
-        ephemeral: 0
-        public: true
-    images:
-      manila-service-image:
-        id: 9c268c72-ecb0-48a4-bf63-fca167e0c76a
-        name: "manila-service-image"
-        source_url: "https://tarballs.opendev.org/openstack/manila-image-elements/images/"
-        image_file: "manila-service-image-master.qcow2"
-        image_type: qcow2
-        container_format: bare
-        private: false
-
-dependencies:
-  static:
-    api:
-      jobs:
-        - manila-db-sync
-        - manila-ks-user
-        - manila-ks-endpoints
-    data:
-      jobs:
-        - manila-db-sync
-        - manila-ks-user
-        - manila-ks-endpoints
-    share:
-      jobs:
-        - manila-db-sync
-        - manila-ks-user
-        - manila-ks-endpoints
-    scheduler:
-      jobs:
-        - manila-db-sync
-        - manila-ks-user
-        - manila-ks-endpoints
-    manager:
-      jobs:
-        - manila-db-sync
-        - manila-ks-user
-        - manila-ks-endpoints
-    db_sync:
-      jobs: []
-
-conf:
-  manila:
-    DEFAULT:
-      enabled_share_backends: generic_standard
-      enabled_share_protocols: NFS
-      default_share_type: generic_standard
-      # Use Neutron for DHSS=True networking
-      network_api_class: manila.network.neutron.neutron_network_plugin.NeutronNetworkPlugin
-      osapi_share_use_ssl: true
-      #manila_service_keypair_name: manila-service-keypair
-    generic_standard:
-      share_backend_name: generic_standard
-      share_driver: manila.share.drivers.generic.GenericShareDriver
-      driver_handles_share_servers: true
-      service_image_id: ""
-      service_instance_user: manila
-      service_network_id: ""
-      service_subnet_id: ""
-      service_instance_flavor_id: 365fae53-f901-42ef-b19d-d8b0e06714fe
-      cinder_volume_type: Standard
-      service_instance_name_template: "mnl-generic-%s"
-      service_instance_security_group: "manila-service-sg"
-    cinder:
-      cross_az_attach: true
-    database:
-      max_retries: -1
-    oslo_policy:
-      policy_file: /etc/manila/policy.yaml
-    oslo_concurrency:
-      lock_path: /var/lib/manila/tmp
-    oslo_messaging_notifications:
-      driver: noop
-    oslo_middleware:
-      enable_proxy_headers_parsing: true
-    oslo_messaging_rabbit:
-      rabbit_ha_queues: true
-  manila_api_uwsgi:
-    uwsgi:
-      add-header: "Connection: close"
-      buffer-size: 65535
-      die-on-term: true
-      enable-threads: true
-      exit-on-reload: false
-      hook-master-start: unix_signal:15 gracefully_kill_them_all
-      lazy-apps: true
-      log-x-forwarded-for: true
-      master: true
-      procname-prefix-spaced: "manila-api:"
-      route-user-agent: '^kube-probe.* donotlog:'
-      thunder-lock: true
-      worker-reload-mercy: 80
-      wsgi-file: /var/lib/openstack/bin/manila-wsgi
-      processes: 1
-  logging:
-    logger_root:
-      level: INFO
-      handlers:
-        - stdout
-    logger_manila:
-      level: INFO
-      handlers:
-        - stdout
-      qualname: manila
-
-manifests:
-  deployment_share: false
-
 EOF
 fi
 
@@ -1219,6 +721,10 @@ conf:
       workers: 1
     oslo_messaging_notifications:
       driver: noop
+    libvirt:
+      virt_type  = qemu
+      images_type = qcow2
+      images_path = /var/lib/nova/instances
   nova_api_uwsgi:
     uwsgi:
       processes: 1
@@ -1282,6 +788,21 @@ conf:
 EOF
 fi
 
+if [ ! -f "/etc/genestack/helm-configs/manila/manila-helm-overrides.yaml" ]; then
+cat > /etc/genestack/helm-configs/manila/manila-helm-overrides.yaml <<EOF
+---
+pod:
+  resources:
+    enabled: false
+bootstrap:
+  enabled: false
+conf:
+  manila:
+    oslo_messaging_notifications:
+      driver: noop
+EOF
+fi
+
 if [ ! -f "/etc/genestack/helm-configs/cloudkitty/cloudkitty-helm-overrides.yaml" ]; then
 cat > /etc/genestack/helm-configs/cloudkitty/cloudkitty-helm-overrides.yaml <<EOF
 ---
@@ -1296,6 +817,38 @@ conf:
     uwsgi:
       processes: 1
       threads: 1
+EOF
+fi
+
+if [ ! -f "/etc/genestack/helm-configs/freezer/freezer-helm-overrides.yaml" ]; then
+cat > /etc/genestack/helm-configs/freezer/freezer-helm-overrides.yaml <<EOF
+---
+pod:
+  resources:
+    enabled: false
+conf:
+  freezer_api_uwsgi:
+    uwsgi:
+      processes: 1
+  freezer:
+    oslo_messaging_notifications:
+      driver: noop
+EOF
+fi
+
+if [ ! -f "/etc/genestack/helm-configs/zaqar/zaqar-helm-overrides.yaml" ]; then
+cat > /etc/genestack/helm-configs/zaqar/zaqar-helm-overrides.yaml <<EOF
+---
+pod:
+  resources:
+    enabled: false
+conf:
+  zaqar_api_uwsgi:
+    uwsgi:
+      processes: 1
+  zaqar:
+    oslo_messaging_notifications:
+      driver: noop
 EOF
 fi
 
@@ -1493,6 +1046,8 @@ endpoints:
         region_name: *region
       freezer:
         region_name: *region
+      zaqar:
+        region_name: *region
     host_fqdn_override:
       public:
         tls: {}
@@ -1607,11 +1162,20 @@ endpoints:
         public: 443
     scheme:
       public: https
+  messaging:
+    host_fqdn_override:
+      public:
+        tls: {}
+        host: zaqar.${GATEWAY_DOMAIN}
+    port:
+      api:
+        public: 443
+    scheme:
+      public: https
 EOF
 fi
 EOC
 
-echo "Run host and K8s setup"
 # Run host and K8S setup
 ssh -F ~/.ssh/hyperconverged-${OS_CLOUD}.config -i ~/.ssh/hyperconverged-key.pem -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${SSH_USERNAME}@${JUMP_HOST_VIP} <<EOC
 set -e
@@ -1619,10 +1183,7 @@ if [ ! -f "/usr/local/bin/queue_max.sh" ]; then
   python3 -m venv ~/.venvs/genestack
   ~/.venvs/genestack/bin/pip install -r /opt/genestack/requirements.txt
   source /opt/genestack/scripts/genestack.rc
-  ansible-galaxy collection install --force community.general==11.0.0
   ANSIBLE_SSH_PIPELINING=0 ansible-playbook /opt/genestack/ansible/playbooks/host-setup.yml --become -e host_required_kernel=\$(uname -r)
-  ANSIBLE_SSH_PIPELINING=0 ansible-playbook /opt/genestack/ansible/playbooks/cinder-volumes-lvm-setup.yaml --become
-  ansible-galaxy collection install --force -r /opt/genestack/ansible-collection-requirements.yml
 fi
 if [ ! -d "/var/lib/kubelet" ]; then
   source /opt/genestack/scripts/genestack.rc
@@ -1655,7 +1216,6 @@ if [ ! -f "/etc/genestack/openstack-components.yaml" ]; then
 fi
 EOC
 
-echo "Run Genestack Infrastructure/Openstack Setup"
 # Run Genestack Infrastucture/OpenStack Setup
 ssh -F ~/.ssh/hyperconverged-${OS_CLOUD}.config -i ~/.ssh/hyperconverged-key.pem -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${SSH_USERNAME}@${JUMP_HOST_VIP} <<EOC
 set -e
@@ -1669,7 +1229,6 @@ echo "Installing OpenStack"
 sudo /opt/genestack/bin/setup-openstack.sh
 EOC
 
-echo "Run Genestack post setup"
 # Run Genestack post setup
 ssh -F ~/.ssh/hyperconverged-${OS_CLOUD}.config -i ~/.ssh/hyperconverged-key.pem -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${SSH_USERNAME}@${JUMP_HOST_VIP} <<EOC
 set -e
@@ -1683,7 +1242,6 @@ if ! openstack --os-cloud default flavor show ${LAB_NAME_PREFIX}-test; then
             --disk 10 \
             --vcpus 2
 fi
-
 if ! openstack --os-cloud default network show flat; then
   openstack --os-cloud default network create \
             --share \
@@ -1693,63 +1251,19 @@ if ! openstack --os-cloud default network show flat; then
             --provider-physical-network physnet1 \
             flat
 fi
-
 if ! openstack --os-cloud default subnet show flat_subnet; then
   openstack --os-cloud default subnet create \
             --subnet-range 192.168.102.0/24 \
             --gateway 192.168.102.1 \
             --dns-nameserver 1.1.1.1 \
-            --allocation-pool start=192.168.102.100,end=192.168.102.112 \
+            --allocation-pool start=192.168.102.100,end=192.168.102.109 \
             --dhcp \
             --network flat \
             flat_subnet
 fi
-
-#if ! openstack --os-cloud default network show manila_flat; then
-#  openstack --os-cloud default network create \
-#            --share \
-#            --availability-zone-hint az1 \
-#            --external \
-#            --provider-network-type flat \
-#            --provider-physical-network physnet1 \
-#            manila_flat
-#fi
-#
-#if ! openstack --os-cloud default subnet show manila_flat_subnet; then
-#  openstack --os-cloud default subnet create \
-#            --subnet-range 192.168.10.0/24 \
-#            --gateway 192.168.10.1 \
-#            --dns-nameserver 1.1.1.1 \
-#            --allocation-pool start=192.168.10.100,end=192.168.10.112 \
-#            --dhcp \
-#            --network flat \
-#            manila_flat_subnet
-#fi
-
-openstack volume type create \
-    --description 'Standard with LUKS encryption' \
-    --encryption-provider luks \
-    --encryption-cipher aes-xts-plain64 \
-    --encryption-key-size 256 \
-    --encryption-control-location front-end \
-    --property volume_backend_name=LVM_iSCSI \
-    --property provisioning:max_vol_size='199' \
-    --property provisioning:min_vol_size='1' \
-    Standard
-
-openstack volume qos create \
-    --property read_iops_sec_per_gb='20' \
-    --property write_iops_sec_per_gb='20' \
-    Standard-Block
-
-openstack volume qos associate Standard-Block Standard
-
-openstack volume type set --private __DEFAULT__
-
 HERE
 EOC
 
-echo "Extra operations"
 # Extra operations...
 install_k9s() {
 echo "Installing k9s"

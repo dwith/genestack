@@ -41,7 +41,7 @@ wait_for_cloud_init() {
 wait_and_install_packages() {
     local sleep_time=5  # Default sleep time between checks (in seconds)
     local pkg_manager=""
-    local apt_packages=("python3-pip" "python3-venv" "python3-dev" "jq" "build-essential")
+    local apt_packages=("python3-pip" "python3-pip-whl" "python3.12-venv" "python3.12-dev" "jq" "build-essential")
     local dnf_packages=("python3-pip" "python3-venv" "python3-dev" "jq" "build-essential")
 
     # Check for Apt locks

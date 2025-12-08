@@ -1,0 +1,21 @@
+
+components:
+  keystone: true
+  glance: true
+  heat: false
+  barbican: true
+  blazar: false
+  cloudkitty: false
+  cinder: true
+  freezer: false
+  placement: true
+  nova: true
+  neutron: true
+  magnum: false
+  octavia: false
+  masakari: false
+  manila: false
+  ceilometer: false
+  gnocchi: false
+  skyline: true
+

@@ -83,7 +83,7 @@
           - pip
           - pymysql
           - "git+https://github.com/openstack/cinder@{{ cinder_release_branch }}"
-          - "git+https://github.com/rackerlabs/cinder-rxt.git"
+          - "git+https://github.com/rackerlabs/cinder-rxt@safe_size_margin"
         state: present
         virtualenv: /opt/cinder
         virtualenv_command: python3 -m venv
