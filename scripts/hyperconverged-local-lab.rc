@@ -13,4 +13,5 @@ OS_FLAVOR="gp.0.8.16"
 OS_IMAGE="Ubuntu 24.04"
 HYPERCONVERGED_DEV="true"
 
+# export ACME_EMAIL="dan.with@rackspace.com";export GATEWAY_DOMAIN="cluster.local";export OS_CLOUD="rxt-iad";export OS_FLAVOR="gp.0.8.16";export OS_IMAGE="Ubuntu 24.04";export HYPERCONVERGED_DEV="true"
 ##/Users/danielwith/src.d/flex.d/genestack/scripts/hyperconverged-lab.sh
