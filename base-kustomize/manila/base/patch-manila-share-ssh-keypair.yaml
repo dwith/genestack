@@ -1,0 +1,48 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: manila-share
+spec:
+  template:
+    spec:
+      # manila-share container runs as uid/gid 42424 (non-root).
+      # fsGroup allows the container to read Secret-mounted key material and write to emptyDir.
+      securityContext:
+        fsGroup: 42424
+      volumes:
+        # Writable directory for ssh (known_hosts, etc.)
+        - name: manila-ssh-dir
+          emptyDir: {}
+        # Keypair already exists in Kubernetes (created by bin/create-secrets.sh)
+        - name: manila-service-keypair
+          secret:
+            secretName: manila-service-keypair
+            items:
+              - key: private_key
+                path: manila-service-keypair.pem
+                mode: 0440
+              - key: public_key
+                path: manila-service-keypair.pub
+                mode: 0444
+      containers:
+        - name: manila-share
+          volumeMounts:
+            - name: manila-ssh-dir
+              mountPath: /var/lib/openstack/.ssh
+            - name: manila-service-keypair
+              mountPath: /var/lib/openstack/.ssh-src
+              readOnly: true
+          # Copy keys into the writable ssh dir with ssh-friendly permissions.
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - |
+                    set -e
+                    cp /var/lib/openstack/.ssh-src/manila-service-keypair.pem /var/lib/openstack/.ssh/manila-service-keypair.pem
+                    cp /var/lib/openstack/.ssh-src/manila-service-keypair.pub /var/lib/openstack/.ssh/manila-service-keypair.pub
+                    chmod 0600 /var/lib/openstack/.ssh/manila-service-keypair.pem
+                    chmod 0644 /var/lib/openstack/.ssh/manila-service-keypair.pub
