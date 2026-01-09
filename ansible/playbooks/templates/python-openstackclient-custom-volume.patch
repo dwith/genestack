@@ -1,0 +1,39 @@
+diff --git a/openstackclient/volume/v3/volume.py b/openstackclient/volume/v3/volume.py
+index 50ea77fb..de2e0e0c 100644
+--- a/openstackclient/volume/v3/volume.py
++++ b/openstackclient/volume/v3/volume.py
+@@ -598,6 +598,12 @@ class ListVolume(command.Lister):
+             metavar='<status>',
+             help=_('Filter results by status'),
+         )
++        parser.add_argument(
++            '--host',
++            metavar='<host>',
++            dest='host',
++            help=_('Filter results by host'),
++        )
+         parser.add_argument(
+             '--property',
+             metavar='<key=value>',
+@@ -637,11 +643,13 @@ class ListVolume(command.Lister):
+                 'Bootable',
+                 'Attachments',
+                 'Metadata',
++                'os-vol-host-attr:host',
+             ]
+             column_headers = copy.deepcopy(columns)
+             column_headers[4] = 'Type'
+             column_headers[6] = 'Attached to'
+             column_headers[7] = 'Properties'
++            column_headers[8] = 'Host'
+         else:
+             columns = [
+                 'ID',
+@@ -676,6 +684,7 @@ class ListVolume(command.Lister):
+             'user_id': user_id,
+             'name': parsed_args.name,
+             'status': parsed_args.status,
++            'host': parsed_args.host,
+             'metadata': parsed_args.properties,
+         }
+
