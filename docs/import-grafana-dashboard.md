@@ -19,8 +19,8 @@ Set the following environment variables before running the script:
 
 ## Usage
 ```bash
-# python import_dashboard.py -h
-usage: import_dashboard.py [-h] -d DIR [-ds DATASOURCE]
+# python import-grafana-dashboard.py -h
+usage: import-grafana-dashboard.py [-h] -d DIR [-ds DATASOURCE]
 
 Import Grafana dashboards from a local directory.
 
@@ -31,8 +31,9 @@ options:
                         Name of the Prometheus datasource. Default: "Prometheus"
 
 export GRAFANA_USERNAME=admin
-export GRAFANA_URL=https://grafana.sjc3.rackspacecloud.com
-export GRAFANA_PASSWORD=your_admin_password
+export GRAFANA_URL=`awk -F': ' '/custom_host/{print "https://" $2}' /etc/genestack/helm-configs/grafana/grafana-helm-overrides.yaml`
+export GRAFANA_PASSWORD=`kubectl -n grafana get secret grafana -o jsonpath='{.data.admin-password}' |base64 -d`
 
-python import_dashboards.py --dir /opt/genestack/etc/grafana-dashboards/ --datasource Prometheus
+source /opt/genestack/scripts/genestack.rc
+python3 /opt/genestack/scripts/import-grafana-dashboard.py --dir /opt/genestack/etc/grafana-dashboards/ --datasource Prometheus
 ```

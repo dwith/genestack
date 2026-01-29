@@ -53,6 +53,9 @@ heat_stack_user_password=$(generate_password 32)
 cinder_rabbitmq_password=$(generate_password 64)
 cinder_db_password=$(generate_password 32)
 cinder_admin_password=$(generate_password 32)
+trove_rabbitmq_password=$(generate_password 64)
+trove_db_password=$(generate_password 32)
+trove_admin_password=$(generate_password 32)
 cloudkitty_rabbitmq_password=$(generate_password 64)
 cloudkitty_db_password=$(generate_password 32)
 cloudkitty_admin_password=$(generate_password 32)
@@ -283,6 +286,34 @@ data:
 apiVersion: v1
 kind: Secret
 metadata:
+  name: trove-rabbitmq-password
+  namespace: openstack
+type: Opaque
+data:
+  username: $(echo -n "trove" | base64)
+  password: $(echo -n $trove_rabbitmq_password | base64 -w0)
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: trove-db-password
+  namespace: openstack
+type: Opaque
+data:
+  password: $(echo -n $trove_db_password | base64 -w0)
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: trove-admin
+  namespace: openstack
+type: Opaque
+data:
+  password: $(echo -n $trove_admin_password | base64 -w0)
+---
+apiVersion: v1
+kind: Secret
+metadata:
   name: cloudkitty-rabbitmq-password
   namespace: openstack
 type: Opaque
@@ -368,6 +399,11 @@ kind: Secret
 metadata:
   name: nova-ssh
   namespace: openstack
+  annotations:
+    meta.helm.sh/release-name: nova
+    meta.helm.sh/release-namespace: openstack
+  labels:
+    app.kubernetes.io/managed-by: Helm
 type: Opaque
 data:
   public-key: $(echo $nova_ssh_public_key | base64 -w0)
@@ -903,6 +939,24 @@ if [[ -f ${SKYLINE_SECRETS_FILE} ]]; then
     echo "✓ Skyline secrets appended from ${SKYLINE_SECRETS_FILE}"
 else
     echo "Note: ${SKYLINE_SECRETS_FILE} not found. Run create-skyline-secrets.sh to add skyline secrets."
+fi
+
+# Check if kube-ovn-tls secret exists, and copy to openstack namespace if it does
+if kubectl -n kube-system get secret kube-ovn-tls >/dev/null 2>&1
+then
+    cat <<EOF >> $OUTPUT_FILE
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ovn-client-tls
+  namespace: openstack
+type: Opaque
+data:
+  cacert: $(kubectl -n kube-system get secret kube-ovn-tls -o jsonpath='{.data.cacert}')
+  cert: $(kubectl -n kube-system get secret kube-ovn-tls -o jsonpath='{.data.cert}')
+  key: $(kubectl -n kube-system get secret kube-ovn-tls -o jsonpath='{.data.key}')
+EOF
 fi
 
 rm nova_ssh_key nova_ssh_key.pub
