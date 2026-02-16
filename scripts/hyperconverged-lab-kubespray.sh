@@ -145,6 +145,10 @@ createComputePorts
 # Kubespray-Specific: SSH Key Management
 #############################################################################
 
+if [ -z "$SSH_AUTH_SOCK" ] ; then
+  eval `ssh-agent -s` > /dev/null 2>&1
+fi
+
 if [ ! -d "~/.ssh" ]; then
     echo "Creating the SSH directory"
     mkdir -p ~/.ssh
@@ -162,7 +166,7 @@ if ! openstack keypair show ${LAB_NAME_PREFIX}-key 2>/dev/null; then
     fi
 fi
 
-ssh-add ~/.ssh/${LAB_NAME_PREFIX}-key.pem
+ssh-add ~/.ssh/hyperconverged-key.pem
 
 #############################################################################
 # Create Lab Instances
@@ -201,11 +205,11 @@ fi
 
 echo "Waiting for the jump host to be ready"
 COUNT=0
-while ! ssh -o ConnectTimeout=2 -o ConnectionAttempts=3 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -q ${SSH_USERNAME}@${JUMP_HOST_VIP} exit; do
-    sleep 2
+while ! ssh -o ConnectTimeout=6 -o ConnectionAttempts=3 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -q ${SSH_USERNAME}@${JUMP_HOST_VIP} exit; do
+#while ! ssh -o ConnectTimeout=6 -o ConnectionAttempts=3 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no ${SSH_USERNAME}@${JUMP_HOST_VIP} exit; do
     echo "SSH is not ready, Trying again..."
     COUNT=$((COUNT + 1))
-    if [ $COUNT -gt 60 ]; then
+    if [ $COUNT -gt 120 ]; then
         echo "Failed to ssh into the jump host"
         exit 1
     fi
@@ -344,7 +348,7 @@ prepareJumpHostSource
 #############################################################################
 # Kubespray-Specific: Remote Configuration via SSH
 #############################################################################
-
+echo "Starting SSH for bootstrap"
 ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${SSH_USERNAME}@${JUMP_HOST_VIP} <<EOC
 if [ ! -d "/etc/genestack" ]; then
     sudo /opt/genestack/bootstrap.sh
@@ -539,7 +543,7 @@ EOF
 fi
 
 EOC
-
+echo "BEFORE HELM OVERRIDES AND ENDPOINTS"
 #############################################################################
 # Write Service Helm Overrides and Endpoints (common function)
 #############################################################################
@@ -549,6 +553,7 @@ configureGenestackRemote "${SSH_USERNAME}" "${JUMP_HOST_VIP}" "${METAL_LB_IP}" "
 #############################################################################
 # Kubespray-Specific: Run Host Setup and Kubespray
 #############################################################################
+echo "Starting Kubespray-Specific: Run Host Setup and Kubespray"
 
 ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${SSH_USERNAME}@${JUMP_HOST_VIP} <<EOC
 set -e
@@ -567,11 +572,12 @@ sudo mkdir -p /opt/kube-plugins
 sudo chown \${USER}:\${USER} /opt/kube-plugins
 pushd /opt/kube-plugins
     if [ ! -f "/usr/local/bin/kubectl" ]; then
-        curl -LO "https://dl.k8s.io/release/\$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+        curl -LO "https://dl.k8s.io/release/v1.35.0/bin/linux/amd64/kubectl"
         sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
     fi
     if [ ! -f "/usr/local/bin/kubectl-convert" ]; then
-        curl -LO "https://dl.k8s.io/release/\$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl-convert"
+        curl -LO "https://dl.k8s.io/release/v1.35.0/bin/linux/amd64/kubectl-convert"
+        #curl -LO "https://dl.k8s.io/release/\$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl-convert"
         sudo install -o root -g root -m 0755 kubectl-convert /usr/local/bin/kubectl-convert
     fi
     if [ ! -f "/usr/local/bin/kubectl-ko" ]; then

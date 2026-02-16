@@ -48,7 +48,7 @@ wait_for_cloud_init() {
 
 # Function to wait for Apt and DNF locks, then install packages
 wait_and_install_packages() {
-    local sleep_time=5  # Default sleep time between checks (in seconds)
+    local sleep_time=10  # Default sleep time between checks (in seconds)
     local pkg_manager=""
     local apt_packages=("python3-pip" "python3-venv" "python3-dev" "jq" "build-essential")
     local dnf_packages=("python3-pip" "python3-venv" "python3-dev" "jq" "build-essential")
@@ -83,11 +83,11 @@ wait_and_install_packages() {
     if [[ "$pkg_manager" == "apt" ]]; then
         echo "Detected Apt. Installing packages: ${apt_packages[@]}"
         sudo apt update
-        sudo apt install -y "${apt_packages[@]}" # -y to auto-confirm installations
+        sudo apt install -yq "${apt_packages[@]}" # -y to auto-confirm installations
     elif [[ "$pkg_manager" == "dnf" ]]; then
         echo "Detected DNF. Installing packages: ${dnf_packages[@]}"
         sudo dnf check-update # Checks for updates, but does not download or install packages
-        sudo dnf install -y "${dnf_packages[@]}" # -y to auto-confirm installations
+        sudo dnf install -yq "${dnf_packages[@]}" # -y to auto-confirm installations
     fi
 
     echo "Package installation complete."

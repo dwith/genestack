@@ -1,0 +1,1 @@
+export HYPERCONVERGED_DEV="true"; export HYPERCONVERGED_CINDER_VOLUME=true; export ACME_EMAIL="dan.with@rackspace.com"; export GATEWAY_DOMAIN="cluster.local"; export OS_FLAVOR="gp.5.8.16"; export OS_FLAVOR="gp.0.8.16"; export OS_IMAGE="Ubuntu 24.04"; export OS_CLOUD='rxt-sjc-prod';

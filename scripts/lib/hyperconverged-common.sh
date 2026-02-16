@@ -306,7 +306,7 @@ function createComputePorts() {
 }
 
 #############################################################################
-# Genestack Configuration Functions
+# Genestack Configuration Functions 2>&1
 #############################################################################
 
 function prepareJumpHostSource() {
@@ -321,13 +321,17 @@ function prepareJumpHostSource() {
             exit 1
         fi
         # NOTE: we are assuming an Ubuntu (apt) based instance here
-        ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${SSH_USERNAME}@${JUMP_HOST_VIP} \
-            "while sudo fuser /var/{lib/{dpkg,apt/lists},cache/apt/archives}/lock >/dev/null 2>&1; do echo 'Waiting for apt locks to be released...'; sleep 5; done && sudo apt-get update && sudo apt install -y rsync git"
+        ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no ${SSH_USERNAME}@${JUMP_HOST_VIP} \
+            "while sudo fuser /var/{lib/{dpkg,apt/lists},cache/apt/archives}/lock >/dev/null 2>&1; do echo 'Waiting for apt locks to be released...'; sleep 5; done && sudo DEBIAN_FRONTEND=noninteractive apt-get -qq update && sudo apt install -yqq rsync git"
         echo "Copying the development source code to the jump host"
-        rsync -avz \
-            -e "ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no" \
-            --rsync-path="sudo rsync" --chown=":ubuntu" \
-            ${DEV_PATH} ${SSH_USERNAME}@${JUMP_HOST_VIP}:/opt/
+        rsync -az -e "ssh -T -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=3" --rsync-path="sudo rsync" ${DEV_PATH} ${SSH_USERNAME}@${JUMP_HOST_VIP}:/opt/
+        ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no \
+            ${SSH_USERNAME}@${JUMP_HOST_VIP} \
+            "sudo chgrp -R ubuntu /opt/$(basename ${DEV_PATH})"
+        #ssh -o BatchMode=yes -o AddKeysToAgent=yes -o PubkeyAcceptedAlgorithms=ssh-ed25519 -o ForwardAgent=yes -o ConnectTimeout=20 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no ${SSH_USERNAME}@${JUMP_HOST_VIP} "sudo chown -R ubuntu:ubuntu /opt/genestack"
+        #ssh -o BatchMode=yes -o ForwardAgent=yes -o StrictHostKeyChecking=no -o VerifyHostKeyDNS=no -o UserKnownHostsFile=/dev/null ${SSH_USERNAME}@${JUMP_HOST_VIP} 'sudo chown -R ubuntu:ubuntu /opt/genestack'
+        echo "Done setting ownership on /opt/genestack"
+        echo "==========================================="
     else
         cloneGenestackOnJumpHost
     fi
@@ -1302,7 +1306,7 @@ writeEndpointsConfig '${gateway_domain}' '/etc/genestack/helm-configs/global_ove
 writeOpenstackComponentsConfig '/etc/genestack/openstack-components.yaml' "${os_config}"
 echo 'Genestack service configuration complete'
 EOF
-    } | ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t "${ssh_user}@${jump_host}" bash
+    } | ssh -o ForwardAgent=yes -o StrictHostKeyChecking=no -o VerifyHostKeyDNS=no -o UserKnownHostsFile=/dev/null "${ssh_user}@${jump_host}" bash
 }
 
 function runGenestackSetupRemote() {
@@ -1336,7 +1340,7 @@ function waitForOpenStackAPIsReady() {
     # This function waits for the Nova and Neutron API services to become
     # available and responsive before proceeding with post-setup tasks.
 
-    local timeout="${1:-300}"
+    local timeout="${1:-400}"
     local interval=10
     local elapsed=0
 
@@ -1428,7 +1432,7 @@ function waitForOpenStackAPIsReadyRemote() {
 
     local ssh_user="$1"
     local jump_host="$2"
-    local timeout="${3:-300}"
+    local timeout="${3:-600}"
 
     echo "Waiting for OpenStack APIs on jump host..."
 
