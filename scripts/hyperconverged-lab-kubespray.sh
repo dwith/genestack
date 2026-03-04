@@ -145,6 +145,8 @@ createComputePorts
 # Kubespray-Specific: SSH Key Management
 #############################################################################
 
+export SSH_AUTH_SOCK=/Users/danielwith/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock
+
 if [ -z "$SSH_AUTH_SOCK" ] ; then
   eval `ssh-agent -s` > /dev/null 2>&1
 fi
@@ -166,7 +168,7 @@ if ! openstack keypair show ${LAB_NAME_PREFIX}-key 2>/dev/null; then
     fi
 fi
 
-ssh-add ~/.ssh/hyperconverged-key.pem
+#ssh-add ~/.ssh/hyperconverged-key.pem
 
 #############################################################################
 # Create Lab Instances
