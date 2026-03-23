@@ -67,5 +67,6 @@ data:
   private_key: $(echo -n "$manila_ssh_private_key" | base64 -w0)
 EOF
 
-rm -f manila_ssh_key manila_ssh_key.pub
+#Remove after VM image is built
+#rm -f manila_ssh_key manila_ssh_key.pub
 chmod 0640 ${OUTPUT_FILE}

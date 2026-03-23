@@ -14,7 +14,7 @@
     manila_os_identity_api_version: 3
     manila_os_auth_version: 3
     manila_nova_endpoint_type: "{{ manila_os_endpoint_type }}"
-    manila_helm_values_file: "{{ manila_helm_file | default(lookup('env', 'HOME') ~ '/manila_amphora_provider.yaml') }}"
+    manila_helm_values_file: "{{ manila_helm_file | default(lookup('env', 'HOME') ~ '/manila_provider.yaml') }}"
     interface: "{{ interface }}"
     endpoint_type: "{{ endpoint_type }}"
   environment:
