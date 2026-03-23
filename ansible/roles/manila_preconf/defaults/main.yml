@@ -4,9 +4,9 @@
 # these are the defaults for quotas
 num_manila_instances: 100
 num_manila_cores: "{{ (num_manila_instances|int)*2 }}" # 2 cores for each manila
-manila_ram_mb: "{{ (num_manila_instances|int)*1024 }}" # 1G of ram for each manila
+manila_ram_mb: "{{ (num_manila_instances|int)*2048 }}" # 1G of ram for each manila
 num_manila_ports: "{{ (num_manila_instances|int)*5 }}" # considering 5 ports for manila instance
-manila_num_secgroup: "{{ (num_manila_instances|int)*1.5|int|abs }}" # average 3 listeners per lb
+manila_num_secgroup: "{{ (num_manila_instances|int)*1.5|int|abs }}" # average 3 listeners per Manila
 manila_num_secgroup_rule: "{{ (manila_num_secgroup|int)*5 }}" # considering 5 secgroup rules per sec group
 num_manila_server_groups: "{{ ((num_manila_instances|int)*0.5)|int|abs }}" # 2 manila per group for active/passive
 num_manila_server_group_member: 20
@@ -17,16 +17,16 @@ manila_mgmt_net_type: geneve
 #manila_mgmt_net_segmentation_id
 
 # these are the defaults for lb-mgmt-subnet
-manila_mgmt_subnet_cidr: '172.16.29.0/24'
-manila_mgmt_subnet_pool_start: '172.16.29.2'
-manila_mgmt_subnet_pool_end: '172.16.29.254'
-manila_mgmt_subnet_gateway: '172.16.29.1'
+manila_mgmt_subnet_cidr: '10.254.0.0/16'
+manila_mgmt_subnet_pool_start: '10.254.0.2'
+manila_mgmt_subnet_pool_end: '10.254.255.254'
+manila_mgmt_subnet_gateway: '10.254.0.1'
 
 # these are the defaults for security groups
 manila_icmp_enabled: true
 manila_ssh_enabled: true
 manila_health_mgr_secgrp_name: "manila-health-mgr-secgroup"
-manila_worker_secgrp_name: "manila-worker-secgroup"
+manila_tenant_secgrp_name: "manila-tenant-secgroup"
 manila_mgmt_secgrp_name: "manila-mgmt-secgroup"
 
 # these are the defaults for the flavor, image and ssh keypair
@@ -82,5 +82,5 @@ manila_tmp_dir: "{{ lookup('env', 'HOME') }}/manila"
 ## Client cert validity (in days)
 #octavia_client_cert_valid_period: 1096
 
-# octavia helm values for amphora provider
+# Manila helm values for amphora provider
 manila_helm_values_file: "{{ lookup('env', 'HOME') }}/manila.yaml"

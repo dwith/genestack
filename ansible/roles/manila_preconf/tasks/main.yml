@@ -8,17 +8,17 @@
     - post_deploy
 
 - name: import tasks to create lb-mgmt-net for amphora
-  import_tasks: octavia_lb_net_setup.yml
+  import_tasks: manila_mgmt_net_setup.yml
   tags:
     - always
 
-- name: import tasks to create sec groups for amphora and health manager ports
-  import_tasks: octavia_sec_group.yml
+- name: import tasks to create sec groups for Manila and health manager ports
+  import_tasks: manila_sec_group.yml
   tags:
     - always
 
 - name: import tasks to create health mgr ports
-  import_tasks: octavia_health_mgr_ports.yml
+  import_tasks: manila_health_mgr_ports.yml
   tags:
     - always
 

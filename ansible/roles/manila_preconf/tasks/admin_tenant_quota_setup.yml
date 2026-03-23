@@ -1,7 +1,7 @@
 ---
 # This tasks modifies the quotas for the admin tenant to
-# more suitable defaults as the resources for amphora
-# provider are created in the "admin" tenant by default
+# more suitable defaults as the resources for Manila
+# are created in the "admin" tenant by default
 - name: Fetch the current quotas for the admin tenant
   openstack.cloud.quota:
     name: "{{ admin_project_name | default('admin') }}"

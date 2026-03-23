@@ -24,7 +24,7 @@ do
   PORTNAME=manila-worker-port-$node_short
   if ! PORT_DATA=$(openstack port show "$PORTNAME" -c fixed_ips -f json); then
     PORT_DATA=$(openstack port create "$PORTNAME" --security-group "$SECGRP_ID" \
-                                                  --device-owner Manila:worker \
+                                                  --device-owner manila:worker \
                                                   --host="$node" \
                                                   --network "$NET_ID" \
                                                   -c fixed_ips \

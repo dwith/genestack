@@ -2,7 +2,7 @@
 # These are the tasks to setup the manila-mgmt-net and
 # subnet for Manila; this can either be a vlan, flat
 # or a geneve or vxlan network
-- name: Create manila-mgmt-net for the Manila
+- name: Create manila-mgmt-net for Manila
   openstack.cloud.network:
     name: manila-mgmt-net
     state: present
@@ -33,18 +33,18 @@
 
 # Bit of a hack to ensure gateway is disabled until ansible-playbook releases the fix..
 # disabling the gateway works on 'updates' as-is but not on creates yet..
-- name: Update subnet for lb-mgmt-net
+- name: Update subnet for manila-mgmt-net
   openstack.cloud.subnet:
-    name: lb-mgmt-subnet
+    name: manil-mgmt-subnet
     state: present
     enable_dhcp: true
-    cidr: "{{ lb_mgmt_subnet_cidr }}"
-    allocation_pool_start: "{{ lb_mgmt_subnet_pool_start }}"
-    allocation_pool_end: "{{ lb_mgmt_subnet_pool_end }}"
+    cidr: "{{ manila_mgmt_subnet_cidr }}"
+    allocation_pool_start: "{{ manila_mgmt_subnet_pool_start }}"
+    allocation_pool_end: "{{ manila_mgmt_subnet_pool_end }}"
     disable_gateway_ip: true
-    network_name: lb-mgmt-net
+    network_name: manila-mgmt-net
     interface: public
-  register: create_lb_mgmt_subnet
-  until: create_lb_mgmt_subnet is success
+  register: create_manila_mgmt_subnet
+  until: create_manila_mgmt_subnet is success
   retries: 5
   delay: 5
