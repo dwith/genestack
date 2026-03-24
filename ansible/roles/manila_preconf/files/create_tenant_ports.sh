@@ -32,6 +32,12 @@ do
   fi
   for IP in $(echo "$PORT_DATA" | awk 'BEGIN { FS = "\"" } /ip_address/ { print $(NF - 1) }'); do
     CONTROLLER_IP_PORT_LIST+=("$IP:5555")
+    CONTROLLER_IP_PORT_LIST+=("$IP:22")
+    CONTROLLER_IP_PORT_LIST+=("$IP:111")
+    CONTROLLER_IP_PORT_LIST+=("$IP:662")
+    CONTROLLER_IP_PORT_LIST+=("$IP:2049")
+    CONTROLLER_IP_PORT_LIST+=("$IP:4045")
+    CONTROLLER_IP_PORT_LIST+=("$IP:20048")
   done
 done
 

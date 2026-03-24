@@ -68,7 +68,7 @@
     security_group: "{{ create_manila_tenant_secgroup.security_group.id }}"
     state: present
     protocol: icmp
-    remote_ip_prefix: "{{ manila_tenant_subnet_cidr }}"
+    #remote_ip_prefix: "{{ manila_tenant_subnet_cidr }}"
     interface: public
   register: manila_tenant_secgroup_r_icmp
   until: manila_tenant_secgroup_r_icmp is success
@@ -82,7 +82,7 @@
     protocol: tcp
     port_range_min: 22
     port_range_max: 22
-    remote_ip_prefix: "{{ manila_tenant_subnet_cidr }}"
+    #remote_ip_prefix: "{{ manila_tenant_subnet_cidr }}"
     interface: public
   register: manila_tenant_secgroup_r_22
   until: manila_tenant_secgroup_r_22 is success
@@ -96,7 +96,7 @@
     protocol: tcp
     port_range_min: 111
     port_range_max: 111
-    remote_ip_prefix: "{{ manila_tenant_subnet_cidr }}"
+    #remote_ip_prefix: "{{ manila_tenant_subnet_cidr }}"
     interface: public
   register: manila_tenant_secgroup_r_111
   until: manila_tenant_secgroup_r_111 is success
@@ -110,7 +110,7 @@
     protocol: tcp
     port_range_min: 662
     port_range_max: 662
-    remote_ip_prefix: "{{ manila_tenant_subnet_cidr }}"
+    #remote_ip_prefix: "{{ manila_tenant_subnet_cidr }}"
     interface: public
   register: manila_tenant_secgroup_r_662
   until: manila_tenant_secgroup_r_662 is success
@@ -124,7 +124,7 @@
     protocol: tcp
     port_range_min: 2049
     port_range_max: 2049
-    remote_ip_prefix: "{{ manila_tenant_subnet_cidr }}"
+    #remote_ip_prefix: "{{ manila_tenant_subnet_cidr }}"
     interface: public
   register: manila_tenant_secgroup_r_2049
   until: manila_tenant_secgroup_r_2049 is success
@@ -138,7 +138,7 @@
     protocol: tcp
     port_range_min: 4045
     port_range_max: 4045
-    remote_ip_prefix: "{{ manila_tenant_subnet_cidr }}"
+    #remote_ip_prefix: "{{ manila_tenant_subnet_cidr }}"
     interface: public
   register: manila_tenant_secgroup_r_4045
   until: manila_tenant_secgroup_r_4045 is success
@@ -152,7 +152,7 @@
     protocol: tcp
     port_range_min: 20048
     port_range_max: 20048
-    remote_ip_prefix: "{{ manila_tenant_subnet_cidr }}"
+    #remote_ip_prefix: "{{ manila_tenant_subnet_cidr }}"
     interface: public
   register: manila_tenant_secgroup_r_20048
   until: manila_tenant_secgroup_r_20048 is success
@@ -166,7 +166,7 @@
     protocol: udp
     port_range_min: 111
     port_range_max: 111
-    remote_ip_prefix: "{{ manila_tenant_subnet_cidr }}"
+    #remote_ip_prefix: "{{ manila_tenant_subnet_cidr }}"
     interface: public
   register: manila_tenant_secgroup_r_111_udp
   until: manila_tenant_secgroup_r_111_udp is success
@@ -180,7 +180,7 @@
     protocol: udp
     port_range_min: 662
     port_range_max: 662
-    remote_ip_prefix: "{{ manila_tenant_subnet_cidr }}"
+    #remote_ip_prefix: "{{ manila_tenant_subnet_cidr }}"
     interface: public
   register: manila_tenant_secgroup_r_662_udp
   until: manila_tenant_secgroup_r_662_udp is success
@@ -194,7 +194,7 @@
     protocol: udp
     port_range_min: 2049
     port_range_max: 2049
-    remote_ip_prefix: "{{ manila_tenant_subnet_cidr }}"
+    #remote_ip_prefix: "{{ manila_tenant_subnet_cidr }}"
     interface: public
   register: manila_tenant_secgroup_r_2049_udp
   until: manila_tenant_secgroup_r_2049_udp is success
@@ -208,7 +208,7 @@
     protocol: udp
     port_range_min: 4045
     port_range_max: 4045
-    remote_ip_prefix: "{{ manila_tenant_subnet_cidr }}"
+    #remote_ip_prefix: "{{ manila_tenant_subnet_cidr }}"
     interface: public
   register: manila_tenant_secgroup_r_4045_udp
   until: manila_tenant_secgroup_r_4045_udp is success
@@ -222,7 +222,7 @@
     protocol: udp
     port_range_min: 20048
     port_range_max: 20048
-    remote_ip_prefix: "{{ manila_tenant_subnet_cidr }}"
+    #remote_ip_prefix: "{{ manila_tenant_subnet_cidr }}"
     interface: public
   register: manila_tenant_secgroup_r_20048_udp
   until: manila_tenant_secgroup_r_20048_udp is success
@@ -253,14 +253,14 @@
   retries: 5
   delay: 5
 
-- name: Create Security group rule to allow traffic on port 555 UDP for Manila Tenants
+- name: Create Security group rule to allow traffic on port 5555 UDP for Manila Tenants
   openstack.cloud.security_group_rule:
     security_group: "{{ create_manila_tenant_secgroup.security_group.id }}"
     state: present
     protocol: udp
     port_range_min: 5555
     port_range_max: 5555
-    remote_ip_prefix: "{{ manila_tenant_subnet_cidr }}"
+    #remote_ip_prefix: "{{ manila_tenant_subnet_cidr }}"
     interface: public
   register: manila_tenant_secgroup_r_5555_udp
   until: manila_tenant_secgroup_r_5555_udp is success
