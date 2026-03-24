@@ -21,10 +21,10 @@ CTRLS=$(kubectl get nodes -l openstack-control-plane=enabled -o name | awk -F"/"
 for node in $CTRLS
 do
   node_short=$(echo "$node" | awk -F"." '{print $1}')
-  PORTNAME=manila-worker-port-$node_short
+  PORTNAME=manila-tenant-port-$node_short
   if ! PORT_DATA=$(openstack port show "$PORTNAME" -c fixed_ips -f json); then
     PORT_DATA=$(openstack port create "$PORTNAME" --security-group "$SECGRP_ID" \
-                                                  --device-owner manila:worker \
+                                                  --device-owner manila:tenant \
                                                   --host="$node" \
                                                   --network "$NET_ID" \
                                                   -c fixed_ips \
@@ -36,4 +36,4 @@ do
 done
 
 readarray -t sorted < <(for item in "${CONTROLLER_IP_PORT_LIST[@]}"; do echo "${item}"; done | sort)
-echo $(IFS=,; echo "${sorted[*]}") > /tmp/manila_worker_controller_ip_port_list
+echo $(IFS=,; echo "${sorted[*]}") > /tmp/manila_tenant_controller_ip_port_list

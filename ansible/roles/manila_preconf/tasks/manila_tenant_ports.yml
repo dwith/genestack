@@ -18,5 +18,5 @@
 
 - name: run the shell script to create worker ports if required
   script:
-    cmd: create_worker_ports.sh {{ manila_service_info.networks[0].id }} {{ manila_tenant_secgroup_info.security_groups[0].id }} {{ lookup('env', 'OS_CLOUD') | default('openstack_helm') }}
-    creates: /tmp/manila_worker_controller_ip_port_list
+    cmd: create_tenant_ports.sh {{ manila_service_info.networks[0].id }} {{ manila_tenant_secgroup_info.security_groups[0].id }} {{ lookup('env', 'OS_CLOUD') | default('openstack_helm') }}
+    creates: /tmp/manila_tenant_controller_ip_port_list
