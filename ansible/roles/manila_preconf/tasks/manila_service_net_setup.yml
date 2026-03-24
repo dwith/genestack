@@ -1,0 +1,50 @@
+---
+# These are the tasks to setup the manila-service-net and
+# subnet for Manila; this can either be a vlan, flat
+# or a geneve or vxlan network
+- name: Create manila-service-net for Manila
+  openstack.cloud.network:
+    name: manila-service-net
+    state: present
+    provider_network_type: "{{ manila_service_net_type }}"
+    provider_physical_network: "{{ manila_service_net_physical_net | default(omit) }}"
+    provider_segmentation_id: "{{ manila_service_net_segmentation_id | default(omit) }}"
+    interface: public
+  register: create_manila_service_net
+  until: create_manila_service_net is success
+  retries: 5
+  delay: 5
+
+- name: Create subnet for manila-service-net
+  openstack.cloud.subnet:
+    name: manila-service-subnet
+    state: present
+    enable_dhcp: true
+    cidr: "{{ manila_service_subnet_cidr }}"
+    allocation_pool_start: "{{ manila_service_subnet_pool_start }}"
+    allocation_pool_end: "{{ manila_service_subnet_pool_end }}"
+    disable_gateway_ip: true
+    network_name: manila-service-net
+    interface: public
+  register: create_manila_service_subnet
+  until: create_manila_service_subnet is success
+  retries: 5
+  delay: 5
+
+# Bit of a hack to ensure gateway is disabled until ansible-playbook releases the fix..
+# disabling the gateway works on 'updates' as-is but not on creates yet..
+- name: Update subnet for manila-service-net
+  openstack.cloud.subnet:
+    name: manila-service-subnet
+    state: present
+    enable_dhcp: true
+    cidr: "{{ manila_service_subnet_cidr }}"
+    allocation_pool_start: "{{ manila_service_subnet_pool_start }}"
+    allocation_pool_end: "{{ manila_service_subnet_pool_end }}"
+    disable_gateway_ip: true
+    network_name: manila-service-net
+    interface: public
+  register: create_manila_service_subnet
+  until: create_manila_service_subnet is success
+  retries: 5
+  delay: 5

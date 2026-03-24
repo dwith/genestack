@@ -17,17 +17,17 @@ manila_mgmt_net_type: geneve
 #manila_mgmt_net_segmentation_id
 
 # these are the defaults for lb-mgmt-subnet
-manila_mgmt_subnet_cidr: '10.254.0.0/16'
-manila_mgmt_subnet_pool_start: '10.254.0.2'
-manila_mgmt_subnet_pool_end: '10.254.255.254'
-manila_mgmt_subnet_gateway: '10.254.0.1'
+manila_service_subnet_cidr: '10.254.0.0/16'
+manila_service_subnet_pool_start: '10.254.0.2'
+manila_service_subnet_pool_end: '10.254.255.254'
+manila_service_subnet_gateway: '10.254.0.1'
 
 # these are the defaults for security groups
 manila_icmp_enabled: true
 manila_ssh_enabled: true
-manila_health_mgr_secgrp_name: "manila-health-mgr-secgroup"
-manila_tenant_secgrp_name: "manila-tenant-secgroup"
-manila_mgmt_secgrp_name: "manila-mgmt-secgroup"
+manila_health_mgr_secgroup_name: "manila-health-mgr-secgroup"
+manila_tenant_secgroup_name: "manila-tenant-secgroup"
+manila_service_secgroup_name: "manila-service-secgroup"
 
 # these are the defaults for the flavor, image and ssh keypair
 # ADMIN_NETWORK_ID=$(openstack network list -f yaml | yq '.[] | select(.Name=="flat") | .ID')

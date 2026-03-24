@@ -7,8 +7,8 @@
     - always
     - post_deploy
 
-- name: import tasks to create lb-mgmt-net for amphora
-  import_tasks: manila_mgmt_net_setup.yml
+- name: import tasks to create manila-service-net for manila
+  import_tasks: manila_service_net_setup.yml
   tags:
     - always
 

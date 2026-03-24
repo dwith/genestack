@@ -13,48 +13,48 @@
 # health manager secgroup
 # only allows traffic on port 5555
 #
-- name: Create security group for Manila mgmt
+- name: Create security group for Manila service
   openstack.cloud.security_group:
-    name: "{{ manila_mgmt_secgrp_name }}"
+    name: "{{ manila_service_secgroup_name }}"
     state: present
     description: "security group for Manila"
     interface: public
-  register: create_manila_mgmt_secgroup
-  until: create_manila_mgmt_secgroup is success
+  register: create_manila_service_secgroup
+  until: create_manila_service_secgroup is success
   retries: 5
   delay: 5
 
-- name: Create Security group rule to allow icmp traffic for Manila mgmt
+- name: Create Security group rule to allow icmp traffic for Manila service
   openstack.cloud.security_group_rule:
-    security_group: "{{ create_manila_mgmt_secgroup.security_group.id }}"
+    security_group: "{{ create_manila_service_secgroup.security_group.id }}"
     state: present
     protocol: icmp
-    remote_ip_prefix: "{{ manila_mgmt_subnet_cidr }}"
+    remote_ip_prefix: "{{ manila_service_subnet_cidr }}"
     interface: public
-  register: manila_mgmt_secgroup_r_icmp
-  until: manila_mgmt_secgroup_r_icmp is success
+  register: manila_service_secgroup_r_icmp
+  until: manila_service_secgroup_r_icmp is success
   retries: 5
   delay: 5
   when: manila_icmp_enabled
 
-- name: Create Security group rule to allow ssh traffic for Manila mgmt
+- name: Create Security group rule to allow ssh traffic for Manila service
   openstack.cloud.security_group_rule:
-    security_group: "{{ create_manila_mgmt_secgroup.security_group.id }}"
+    security_group: "{{ create_manila_service_secgroup.security_group.id }}"
     state: present
     protocol: tcp
     port_range_min: 22
     port_range_max: 22
-    remote_ip_prefix: "{{ manila_mgmt_subnet_cidr }}"
+    remote_ip_prefix: "{{ manila_service_subnet_cidr }}"
     interface: public
-  register: manila_mgmt_secgroup_r_22
-  until: manila_mgmt_secgroup_r_22 is success
+  register: manila_service_secgroup_r_22
+  until: manila_service_secgroup_r_22 is success
   retries: 5
   delay: 5
   when: manila_ssh_enabled
 
 - name: Create security group for Manila Tenants
   openstack.cloud.security_group:
-    name: "{{ manila_tenant_secgrp_name }}"
+    name: "{{ manila_tenant_secgroup_name }}"
     state: present
     description: "security group for Manila Tenants"
     interface: public
@@ -231,7 +231,7 @@
 
 - name: Create security group for health manager ports
   openstack.cloud.security_group:
-    name: "{{ manila_health_mgr_secgrp_name }}"
+    name: "{{ manila_health_mgr_secgroup_name }}"
     state: present
     description: "security group for health manager ports"
     interface: public
@@ -252,4 +252,19 @@
   until: manila_health_mgr_secgroup_r1 is success
   retries: 5
   delay: 5
+
+- name: Create Security group rule to allow traffic on port 555 UDP for Manila Tenants
+  openstack.cloud.security_group_rule:
+    security_group: "{{ create_manila_tenant_secgroup.security_group.id }}"
+    state: present
+    protocol: udp
+    port_range_min: 5555
+    port_range_max: 5555
+    remote_ip_prefix: "{{ manila_tenant_subnet_cidr }}"
+    interface: public
+  register: manila_tenant_secgroup_r_5555_udp
+  until: manila_tenant_secgroup_r_5555_udp is success
+  retries: 5
+  delay: 5
+
 

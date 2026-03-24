@@ -20,6 +20,9 @@ images:
     rabbit_init: "docker.io/rabbitmq:3.13-management"
   pull_policy: "Always"
 
+# NOTE: (brew) requests cpu/mem values based on a three node
+# hyperconverged lab (/scripts/hyperconverged-lab.sh).
+# limit values based on defaults from the openstack-helm charts unless defined
 pod:
   replicas:
     api: 1
@@ -31,6 +34,7 @@ pod:
       deployments:
         rolling_update:
           max_unavailable: 20%
+
   resources:
     enabled: true
     api:
@@ -129,15 +133,15 @@ conf:
       share_backend_name: GENERIC
       share_driver: manila.share.drivers.generic.GenericShareDriver
       driver_handles_share_servers: true
-      service_image_id: '<MANILA_SERVICE_IMAGE_ID>'
-      service_image_name: RS_manila_service_image
+      service_image_id: "${MANILA_SERVICE_IMAGE_ID}"
+      service_image_name: manila-service-image
       service_instance_user: manila
-      service_instance_password: '<MANILA_ADMIN_PASSWORD>'
-      service_instance_flavor_id: '<FLAVOR_ID>'
+      service_instance_password: "${MANILA_PASSWORD}"
+      service_instance_flavor_id: "${MANILA_FLAVOR_ID}"
       service_instance_name_template: "%s"
-      service_instance_security_group: manila-service-sg
-      service_network_name: RS_manila_service_network
-      service_subnet_name: RS_manila_service_subnet
+      service_instance_security_group: manila-service-secgrp
+      service_network_name: manila-service-net
+      service_subnet_name: manila-service-subnet
       service_network_cidr: '10.254.0.0/16'
       service_network_division_mask: '28'
       backend_availability_zone: az1
@@ -145,8 +149,8 @@ conf:
       lvm_share_volume_group: cinder-volumes-1
       cinder_volume_type: Standard
     generic_admin_network:
-      admin_network_id: 61a81b57-2c1e-4182-bf63-166126caa68d
-      admin_subnet_id: 20f3f729-f17f-4791-ae5c-7622572339c6
+      admin_network_id: "${ADMIN_NETWORK_ID}"
+      admin_subnet_id: "${ADMIN_SUBNET_ID}"
       network_api_class: manila.network.neutron.neutron_network_plugin.NeutronNetworkPlugin
     generic_user_network:
       interface_driver: manila.network.linux.interface.OVSInterfaceDriver
@@ -195,4 +199,3 @@ conf:
 
 manifests:
   deployment_share: true
-
