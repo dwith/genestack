@@ -1,5 +1,5 @@
 ---
-# tasks file for octavia_preconf
+# tasks file for manila_preconf
 
 - name: import tasks for modifying the admin tenant quotas
   import_tasks: admin_tenant_quota_setup.yml
@@ -7,48 +7,31 @@
     - always
     - post_deploy
 
-- name: import tasks to create manila-service-net for manila
-  import_tasks: manila_service_net_setup.yml
+    ## Claude: Need task to create secrets using ../files/create_manila_k8s_secrets.sh
+## If secrets are already there in k8s and/or openstack, they will need deleted
+## first.
+
+# One-time create manila-service-network. If the network is already created,
+# then it probably should be deleted in openstack and re-created.
+
+- name: import tasks to create manila-service-network for manila
+  import_tasks: manila_service_network_setup.yml
   tags:
     - always
 
-- name: import tasks to create sec groups for Manila and health manager ports
-  import_tasks: manila_sec_group.yml
-  tags:
-    - always
+# Claude: Create manila-service-image and upload. Please convert playbook to
+# task (manila_service_image_builder.yml). It may need to logically split into
+# different task files. Make sure to update variables in ../defaults/main.yml
+# and/or add new variables to make the playbook (now tasks) work. Currently the
+# playbook has some additional logic for "forcing" different behaviors.
+# Those force options don't seem to be working and need fixed.
 
-- name: import tasks to create health mgr ports
-  import_tasks: manila_health_mgr_ports.yml
-  tags:
-    - always
-
-- name: import tasks to create worker ports
-  import_tasks: octavia_worker_ports.yml
-  tags:
-    - always
-
-- name: import tasks to create amphora image, flavor and ssh keypair
-  import_tasks: octavia_amphora_keypair_image_flavor.yml
-  tags:
-    - always
-    - post_deploy
-
-- name: import tasks to create cert directories
-  import_tasks: octavia_cert_dir_setup.yml
-  tags:
-    - octavia_certs
-    - post_deploy
-  when: octavia_create_certs
-
-- name: import tasks to create octavia certs
-  import_tasks: octavia_cert.yml
-  tags:
-    - octavia_certs
-    - post_deploy
-  when: octavia_create_certs
-
-- name: import tasks to create helm values file for amphora provider
-  import_tasks: octavia_helm_amphorae_values.yml
-  tags:
-    - always
-    - post_deploy
+# Claude: after image creation and upload, modify ../templates/manila_default_helm_config.yaml
+# by plugging in appropriate values. The service-instance-password should not be
+# stored in this file. It should be put into the
+# /etc/genestack/helm-configs/global_overrides/secrets.yaml under the
+# appropriate yaml hierarchy
+# conf:
+#   manila:
+#     generic:
+#       service_instance_password: <manila-service-instance-password>

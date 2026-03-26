@@ -1,21 +1,21 @@
 ---
-# These are the tasks to setup the manila-service-net and
+# These are the tasks to setup the manila-service-network and
 # subnet for Manila; this can either be a vlan, flat
 # or a geneve or vxlan network
-- name: Create manila-service-net for Manila
+- name: Create manila-service-network for Manila
   openstack.cloud.network:
-    name: manila-service-net
+    name: manila-service-network
     state: present
-    provider_network_type: "{{ manila_service_net_type }}"
-    provider_physical_network: "{{ manila_service_net_physical_net | default(omit) }}"
-    provider_segmentation_id: "{{ manila_service_net_segmentation_id | default(omit) }}"
+    provider_network_type: "{{ manila_service_network_type }}"
+    provider_physical_network: "{{ manila_service_network_physical_net | default(omit) }}"
+    provider_segmentation_id: "{{ manila_service_network_segmentation_id | default(omit) }}"
     interface: public
-  register: create_manila_service_net
+  register: create_manila_service_network
   until: create_manila_service_net is success
   retries: 5
   delay: 5
 
-- name: Create subnet for manila-service-net
+- name: Create subnet for manila-service-network
   openstack.cloud.subnet:
     name: manila-service-subnet
     state: present
@@ -24,7 +24,7 @@
     allocation_pool_start: "{{ manila_service_subnet_pool_start }}"
     allocation_pool_end: "{{ manila_service_subnet_pool_end }}"
     disable_gateway_ip: true
-    network_name: manila-service-net
+    network_name: manila-service-network
     interface: public
   register: create_manila_service_subnet
   until: create_manila_service_subnet is success
@@ -33,7 +33,7 @@
 
 # Bit of a hack to ensure gateway is disabled until ansible-playbook releases the fix..
 # disabling the gateway works on 'updates' as-is but not on creates yet..
-- name: Update subnet for manila-service-net
+- name: Update subnet for manila-service-network
   openstack.cloud.subnet:
     name: manila-service-subnet
     state: present
@@ -42,7 +42,7 @@
     allocation_pool_start: "{{ manila_service_subnet_pool_start }}"
     allocation_pool_end: "{{ manila_service_subnet_pool_end }}"
     disable_gateway_ip: true
-    network_name: manila-service-net
+    network_name: manila-service-network
     interface: public
   register: create_manila_service_subnet
   until: create_manila_service_subnet is success

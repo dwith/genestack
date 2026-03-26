@@ -133,24 +133,19 @@ conf:
       share_backend_name: GENERIC
       share_driver: manila.share.drivers.generic.GenericShareDriver
       driver_handles_share_servers: true
-      service_image_id: "${MANILA_SERVICE_IMAGE_ID}"
+      service_image_id: {{ manila_service_image_id }}
       service_image_name: manila-service-image
       service_instance_user: manila
-      service_instance_password: "${MANILA_PASSWORD}"
-      service_instance_flavor_id: "${MANILA_FLAVOR_ID}"
+      service_instance_flavor_id: {{ manila_service_instance_flavor_id }}
       service_instance_name_template: "%s"
-      service_instance_security_group: manila-service-secgrp
-      service_network_name: manila-service-net
-      service_subnet_name: manila-service-subnet
-      service_network_cidr: '10.254.0.0/16'
-      service_network_division_mask: '28'
+      service_instance_security_group: manila-service-sg
       backend_availability_zone: az1
       storage_availability_zone: az1
       lvm_share_volume_group: cinder-volumes-1
       cinder_volume_type: Standard
     generic_admin_network:
-      admin_network_id: "${ADMIN_NETWORK_ID}"
-      admin_subnet_id: "${ADMIN_SUBNET_ID}"
+      admin_network_id: {{ manila_admin_network_id }}
+      admin_subnet_id: {{ manila_admin_subnet_id }}
       network_api_class: manila.network.neutron.neutron_network_plugin.NeutronNetworkPlugin
     generic_user_network:
       interface_driver: manila.network.linux.interface.OVSInterfaceDriver

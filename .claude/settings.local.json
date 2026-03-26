@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ssh -F ~/.ssh/hyperconverged-rxt-sjc-prod.config -i ~/.ssh/hyperconverged-key.pem ubuntu@66.70.103.78 \"echo ''Connected successfully'' && hostname\")",
+      "Bash(ssh -F ~/.ssh/hyperconverged-rxt-sjc-prod.config -i ~/.ssh/hyperconverged-key.pem ubuntu@66.70.103.78 \"cat /opt/genestack/bin/install-manila.sh\")",
+      "Bash(grep -r \"openstack network\\\\|openstack subnet\\\\|openstack router\\\\|openstack security\\\\|net_create\\\\|subnet_create\\\\|router_create\\\\|sg_create\\\\|security_group\" /Users/danielwith/src.d/flex.d/manila --include=*.sh --include=*.tpl --include=*.py)",
+      "Bash(grep -i \"kind.*network\\\\|kind.*subnet\\\\|kind.*router\\\\|kind.*security\" /Users/danielwith/src.d/flex.d/manila/templates/*.yaml)",
+      "Bash(ssh -F ~/.ssh/hyperconverged-rxt-sjc-prod.config -i ~/.ssh/hyperconverged-key.pem ubuntu@66.70.103.78 \"source /opt/genestack/scripts/genestack.rc && kubectl -n openstack get pods | grep manila\")",
+      "Bash(ssh -F ~/.ssh/hyperconverged-rxt-sjc-prod.config -i ~/.ssh/hyperconverged-key.pem ubuntu@66.70.103.78 \"source /opt/genestack/scripts/genestack.rc && grep -A5 ''connect_share_server_to_tenant_network\\\\|admin_network_id\\\\|admin_subnet_id\\\\|service_network_name\\\\|use_service_network'' /etc/genestack/helm-configs/manila/manila-helm-overrides.yaml\")"
+    ]
+  }
+}

@@ -2,85 +2,24 @@
 # defaults file for manila_preconf
 
 # these are the defaults for quotas
-num_manila_instances: 100
-num_manila_cores: "{{ (num_manila_instances|int)*2 }}" # 2 cores for each manila
-manila_ram_mb: "{{ (num_manila_instances|int)*2048 }}" # 1G of ram for each manila
-num_manila_ports: "{{ (num_manila_instances|int)*5 }}" # considering 5 ports for manila instance
-manila_num_secgroup: "{{ (num_manila_instances|int)*1.5|int|abs }}" # average 3 listeners per Manila
-manila_num_secgroup_rule: "{{ (manila_num_secgroup|int)*5 }}" # considering 5 secgroup rules per sec group
-num_manila_server_groups: "{{ ((num_manila_instances|int)*0.5)|int|abs }}" # 2 manila per group for active/passive
-num_manila_server_group_member: 20
+manila_instances_num: 100
+manila_cores_num: "{{ (manila_instances_num|int)*2 }}"
+manila_ram_mb: "{{ (manila_instances_num|int)*2048 }}"
+manila_ports_num: "{{ (manila_instances_num|int)*5 }}"
+manila_secgroup_num: "{{ (manila_instances_num|int)*1.5|int|abs }}"
+manila_secgroup_rule_num: "{{ (manila_secgroup_num|int)*5 }}"
+manila_server_groups_num: "{{ ((manila_instances_num|int)*0.5)|int|abs }}"
+manila_server_group_member_num: 20
 
-# these are the defaults for manila-mgmt-net
-#manila_mgmt_net_physical_net
-manila_mgmt_net_type: geneve
-#manila_mgmt_net_segmentation_id
+manila_service_image_version: noble
+manila_service_image_name: manila-service-image
+manila_service_image_id: ""
+manila_service_instance_flavor_id: ""
+manila_service_instance_password: ""
+manila_admin_network_id: ""
+manila_admin_subnet_id: ""
 
-# these are the defaults for lb-mgmt-subnet
 manila_service_subnet_cidr: '10.254.0.0/16'
 manila_service_subnet_pool_start: '10.254.0.2'
 manila_service_subnet_pool_end: '10.254.255.254'
 manila_service_subnet_gateway: '10.254.0.1'
-
-# these are the defaults for security groups
-manila_icmp_enabled: true
-manila_ssh_enabled: true
-manila_health_mgr_secgroup_name: "manila-health-mgr-secgroup"
-manila_tenant_secgroup_name: "manila-tenant-secgroup"
-manila_service_secgroup_name: "manila-service-secgroup"
-
-# these are the defaults for the flavor, image and ssh keypair
-# ADMIN_NETWORK_ID=$(openstack network list -f yaml | yq '.[] | select(.Name=="flat") | .ID')
-#ADMIN_SUBNET_ID=$(openstack subnet list -f yaml | yq '.[] | select(.Name=="flat_subnet") | .ID')
-#MANILA_FLAVOR_ID=$(openstack flavor list -f yaml | yq '.[] | select(.Name=="m1.medium") | .ID')
-#export MANILA_PASSWORD="$MANILA_ADMIN_PASSWORD"
-#export MANILA_USER_AUTHORIZED_KEYS="${TMP_DIR}/manila-service-image-build/manila-image-elements/manila-service-keypair.pub"
-#export MANILA_IMG_NAME='RS_manila_service_image'
-#export DHCP_TIMEOUT=900
-manila_ssh_key_name: manila-ssh-key #manila-service-keypair?
-manila_flavor_name: m1.manila
-manila_image_version: noble
-manila_image_name: manila-ubuntu-{{ manila_image_version }}
-#manila_image_url: "https://tarballs.opendev.org/openstack/octavia/test-images/test-only-manila-x64-haproxy-ubuntu-{{ manila_image_version }}.qcow2"
-
-# these are the defaults for certs
-#octavia_create_certs: true
-#octavia_certs_dir: "{{ lookup('env', 'HOME') }}/octavia_certs"
-manila_tmp_dir: "{{ lookup('env', 'HOME') }}/manila"
-#octavia_cert_key_bits: 4096
-#octavia_key_type: "RSA"
-#octavia_key_passwd: 'not-secure-passphrase'
-
-#octavia_server_ca_subj: '/C=US/ST=Texas/L=Local/O=RPC/OU=Racklab/CN=ServerRootCA'
-#octavia_client_ca_subj: '/C=US/ST=Texas/L=Local/O=RPC/OU=Racklab/CN=ClientRootCA'
-
-# CA and client cert and key files
-#octavia_serverca_privkey: "{{ octavia_certs_dir }}/private/serverca.key.pem"
-#octavia_server_ca_cert: "{{ octavia_certs_dir }}/certs/serverca.cert.pem"
-#
-#octavia_clientca_privkey: "{{ octavia_certs_dir }}/private/clientca.key.pem"
-#octavia_client_ca_cert: "{{ octavia_certs_dir }}/certs/clientca.cert.pem"
-#
-#octavia_client_csr: "{{ octavia_certs_dir }}/csr/client.csr.pem"
-#octavia_client_key: "{{ octavia_certs_dir }}/private/client.key.pem"
-#octavia_client_cert: "{{ octavia_certs_dir }}/certs/client.cert.pem"
-#octavia_client_key_cert: "{{ octavia_certs_dir }}/private/client-key-and-cert.pem"
-#
-#octavia_ca_valid_period: 1096 # about 3 years
-#
-#
-#octavia_client_key_bits: 2048
-#
-## Client CSR
-#client_cert_CN: "OctaviaController"
-#client_cert_CT: "US"
-#client_cert_ST: "Texas"
-#client_cert_LN: "Local"
-#client_cert_ORG: "RPC"
-#client_cert_OU: "Rackerlab"
-#
-## Client cert validity (in days)
-#octavia_client_cert_valid_period: 1096
-
-# Manila helm values for amphora provider
-manila_helm_values_file: "{{ lookup('env', 'HOME') }}/manila.yaml"
