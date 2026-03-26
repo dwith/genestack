@@ -11,6 +11,8 @@
 ## If secrets are already there in k8s and/or openstack, they will need deleted
 ## first.
 
+# Claude: audit/edit manila_service_network_setup.yml for extraneous values
+# that Manila will automatically take care of.
 # One-time create manila-service-network. If the network is already created,
 # then it probably should be deleted in openstack and re-created.
 
@@ -30,8 +32,9 @@
 # by plugging in appropriate values. The service-instance-password should not be
 # stored in this file. It should be put into the
 # /etc/genestack/helm-configs/global_overrides/secrets.yaml under the
-# appropriate yaml hierarchy
+# appropriate yaml hierarchy. Fill in the actual password value. If the file
+# doesn't exist, create it.
 # conf:
 #   manila:
 #     generic:
-#       service_instance_password: <manila-service-instance-password>
+#       service_instance_password: {{ manila-service-instance-password }}
