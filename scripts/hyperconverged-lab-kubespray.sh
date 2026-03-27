@@ -162,7 +162,8 @@ if ! openstack keypair show ${LAB_NAME_PREFIX}-key 2>/dev/null; then
     fi
 fi
 
-ssh-add ~/.ssh/${LAB_NAME_PREFIX}-key.pem
+#ssh-add ~/.ssh/${LAB_NAME_PREFIX}-key.pem
+export SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
 
 #############################################################################
 # Create Lab Instances
