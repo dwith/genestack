@@ -602,6 +602,13 @@ if [ "${RUN_EXTRAS}" -eq 1 ] && [ ${DISABLE_OPENSTACK} = "false" ]; then
 fi
 
 #############################################################################
+# Manila per-configuration
+#############################################################################
+if [ "${RUN_EXTRAS}" -eq 1 ] && [ ${DISABLE_OPENSTACK} = "false" ]; then
+  install_preconf_manila
+fi
+
+#############################################################################
 # Extra Operations
 #############################################################################
 
@@ -618,7 +625,7 @@ fi
 if [ "${TEST_LEVEL}" = "off" ]; then
     # Wait for Nova and Neutron APIs to be ready before proceeding
     waitForOpenStackAPIsReadyRemote "${SSH_USERNAME}" "${JUMP_HOST_VIP}"
-    
+
     createPostSetupResourcesRemote "${SSH_USERNAME}" "${JUMP_HOST_VIP}" "${LAB_NAME_PREFIX}"
 
     # Trove Setup & Installation

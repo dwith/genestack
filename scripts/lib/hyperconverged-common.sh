@@ -1668,6 +1668,30 @@ sudo /opt/genestack/bin/install-octavia.sh -f $OCTAVIA_HELM_FILE
 EOC
 }
 
+function install_preconf_manila() {
+    echo "Installing Manila preconf"
+    ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${SSH_USERNAME}@${JUMP_HOST_VIP} << 'EOC'
+set -e
+
+if [ ! -f ~/.config/openstack ]; then
+    sudo mkdir -p ~/.config/openstack
+    sudo cp /root/.config/openstack/clouds.yaml ~/.config/openstack
+    sudo chown $(id -u):$(id -g) ~/.config
+fi
+
+source ~/.venvs/genestack/bin/activate
+
+MANILA_HELM_FILE=/etc/genestack/helm-configs/manila-helm-overrides.yaml
+
+ANSIBLE_SSH_PIPELINING=0 ansible-playbook /opt/genestack/ansible/playbooks/manila-preconf-main.yaml \
+    -e manila_os_region_name=$(sudo ~/.venvs/genestack/bin/openstack --os-cloud=default endpoint list --service keystone --interface internal -c Region -f value)
+
+echo "Installing Manila"
+sudo /opt/genestack/bin/install-manila.sh -f $MANILA_HELM_FILE
+sudo /opt/genestack/ansible/playbooks/manila-preconf-main.yaml --tags post_deploy
+EOC
+}
+
 function setupKubeConfig() {
     if [ ! -d ~/.kube ]; then
         mkdir ~/.kube

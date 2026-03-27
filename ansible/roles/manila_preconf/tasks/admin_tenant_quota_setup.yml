@@ -26,7 +26,7 @@
     - name: Fetch current quotas for the admin tenant
       openstack.cloud.quota:
         name: "{{ admin_project_name | default('admin') }}"
-        interface: internal
+        interface: "{{ manila_os_endpoint_type }}"
       register: _current_admin_quota
       environment:
         HOME: "{{ ubuntu_home }}"
@@ -65,7 +65,7 @@
         security_group_rule: "{{ _new_secgroup_rules }}"
         server_groups: "{{ _new_server_groups }}"
         server_group_members: "{{ _new_server_group_members }}"
-        interface: internal
+        interface: "{{ manila_os_endpoint_type }}"
       environment:
         HOME: "{{ ubuntu_home }}"
 

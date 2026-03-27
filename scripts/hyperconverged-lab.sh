@@ -51,7 +51,7 @@ PLATFORMS:
 OPTIONS:
     -i <list>    Comma-separated list of OpenStack services to include
     -e <list>    Comma-separated list of OpenStack services to exclude
-    -x           Run extra operations (k9s install, Octavia preconf, etc.)
+    -x           Run extra operations (k9s install, Octavia preconf, Manila preconf, etc.)
 
 ENVIRONMENT VARIABLES:
     ACME_EMAIL          Email for ACME/Let's Encrypt certificates
