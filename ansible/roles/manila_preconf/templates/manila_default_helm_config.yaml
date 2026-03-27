@@ -25,10 +25,10 @@ images:
 # limit values based on defaults from the openstack-helm charts unless defined
 pod:
   replicas:
-    api: 1
-    data: 1
-    scheduler: 1
-    share: 1
+    api: 2
+    data: 2
+    scheduler: 2
+    share: 3
   lifecycle:
     upgrades:
       deployments:
@@ -61,7 +61,7 @@ pod:
     share:
       requests:
         memory: "256Mi"
-        cpu: "500m"
+        cpu: "100m"
       limits:
         memory: "2048Mi"
         cpu: "2000m"
@@ -113,26 +113,24 @@ conf:
       scheduler_default_share_group_filters: AvailabilityZoneFilter,DriverFilter
       capacity_weight_multiplier: 1.0
       enable_new_services: true
-      connect_share_server_to_tenant_network: true
-      manila_service_keypair_name: manila-service-keypair
-      path_to_private_key: /var/lib/openstack/.ssh/manila-service-keypair.pem
-      path_to_public_key: /var/lib/openstack/.ssh/manila-service-keypair.pub
-      admin_network_config_group: generic_admin_network
-      network_config_group: generic_user_network
-      volume_api_class: manila.volume.cinder.API
-      max_time_to_create_volume: 180
-      max_time_to_extend_volume: 180
-      max_time_to_attach: 120
-      lvm_share_volume_group: cinder-volumes-1
-      cinder_volume_type: Standard
-      volume_name_template: "manila-share-%s"
-      volume_snapshot_name_template: "manila-snapshot-%s"
-      share_volume_fstype: ext4
       debug: true
     generic:
       share_backend_name: GENERIC
       share_driver: manila.share.drivers.generic.GenericShareDriver
       driver_handles_share_servers: true
+      connect_share_server_to_tenant_network: true
+      service_network_name: manila-service-network
+      manila_service_keypair_name: manila-service-keypair
+      path_to_private_key: /var/lib/openstack/.ssh/manila-service-keypair.pem
+      path_to_public_key: /var/lib/openstack/.ssh/manila-service-keypair.pub
+      network_config_group: generic_network
+      volume_api_class: manila.volume.cinder.API
+      max_time_to_create_volume: 180
+      max_time_to_extend_volume: 180
+      max_time_to_attach: 120
+      volume_name_template: "manila-share-%s"
+      volume_snapshot_name_template: "manila-snapshot-%s"
+      share_volume_fstype: ext4
       service_image_id: {{ manila_service_image_id }}
       service_image_name: manila-service-image
       service_instance_user: manila
@@ -143,12 +141,8 @@ conf:
       storage_availability_zone: az1
       lvm_share_volume_group: cinder-volumes-1
       cinder_volume_type: Standard
-    generic_admin_network:
-      admin_network_id: {{ manila_admin_network_id }}
-      admin_subnet_id: {{ manila_admin_subnet_id }}
-      network_api_class: manila.network.neutron.neutron_network_plugin.NeutronNetworkPlugin
-    generic_user_network:
-      interface_driver: manila.network.linux.interface.OVSInterfaceDriver
+    generic_network:
+      interface_driver: manila.network.linux.interface.NoopInterfaceDriver
     cinder:
       cross_az_attach: true
     barbican:

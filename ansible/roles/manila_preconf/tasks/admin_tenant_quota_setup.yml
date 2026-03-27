@@ -1,43 +1,92 @@
 ---
-# This tasks modifies the quotas for the admin tenant to
-# more suitable defaults as the resources for Manila
-# are created in the "admin" tenant by default
-- name: Fetch the current quotas for the admin tenant
-  openstack.cloud.quota:
-    name: "{{ admin_project_name | default('admin') }}"
-    interface: public
-  register: _current_admin_quota
+# Increase admin tenant quotas to accommodate Manila service resources.
+# Guarded by manila_adjust_admin_quotas (default true) and a marker file
+# so the increase is only applied once. To re-apply after a reset, delete
+# the marker: /etc/genestack/.manila_quotas_applied
 
-- name: Display the current quota values for the admin tenant
-  debug:
-    msg:
-     - "Current quota value for instances: {{ _current_admin_quota.quotas.compute.instances }}; New quota value for instances: {{ manila_instances_num + _current_admin_quota.quotas.compute.instances }}"
-     - "Current quota value for cores: {{ _current_admin_quota.quotas.compute.cores }}; New quota value for cores: {{ manila_cores_num + _current_admin_quota.quotas.compute.cores }}"
-     - "Current quota value for server_groups: {{ _current_admin_quota.quotas.compute.server_groups }}; New quota value for server_groups: {{ manila_server_groups_num + _current_admin_quota.quotas.compute.server_groups }}"
-     - "Current quota value for ram(MB): {{ _current_admin_quota.quotas.compute.ram }}; New quota value for ram(MB): {{ manila_ram_mb + _current_admin_quota.quotas.compute.ram }}"
-     - "Current quota value for ports: {{ _current_admin_quota.quotas.network.ports }}; New quota value for ports: {{ manila_ports_num + _current_admin_quota.quotas.network.ports }}"
-     - "Current quota value for security_groups: {{ _current_admin_quota.quotas.network.security_groups }}; New quota value for security_groups: {{ manila_secgroup_num + _current_admin_quota.quotas.network.security_groups }}"
-     - "Current quota value for security_group_rules: {{ _current_admin_quota.quotas.network.security_group_rules }}; New quota value for security_group_rules: {{ manila_secgroup_rule_num + _current_admin_quota.quotas.network.security_group_rules }}"
-     - "Current quota value for server_group_members: {{ _current_admin_quota.quotas.compute.server_group_members }}; New quota value for server_group_members: {{ manila_server_group_member_num + _current_admin_quota.quotas.compute.server_group_members }}"
+- name: Check if Manila quota adjustment has already been applied
+  ansible.builtin.stat:
+    path: /etc/genestack/.manila_quotas_applied
+  register: _manila_quota_marker
 
-- name: modify the quotas for the admin tenant to suit to production environments
+- name: Skip quota adjustment (already applied or disabled)
+  ansible.builtin.debug:
+    msg: >-
+      Quota adjustment skipped —
+      {% if not (manila_adjust_admin_quotas | bool) %}disabled via manila_adjust_admin_quotas=false
+      {% else %}marker file /etc/genestack/.manila_quotas_applied exists (already applied)
+      {% endif %}
+  when: not (manila_adjust_admin_quotas | bool) or _manila_quota_marker.stat.exists
+
+- name: Apply Manila quota increase to admin tenant
+  when:
+    - manila_adjust_admin_quotas | bool
+    - not _manila_quota_marker.stat.exists
   block:
-    - openstack.cloud.quota:
-        name: "{{ admin_project_name | default('admin') }}"
-        instances: "{{ manila_instances_num + _current_admin_quota.quotas.compute.instances }}"
-        cores: "{{ manila_cores_num + _current_admin_quota.quotas.compute.cores }}"
-        server_groups: "{{ manila_server_groups_num + _current_admin_quota.quotas.compute.server_groups }}"
-        ram: "{{ manila_ram_mb + _current_admin_quota.quotas.compute.ram }}"
-        port: "{{ manila_ports_num + _current_admin_quota.quotas.network.ports }}"
-        security_group: "{{ manila_secgroup_num + _current_admin_quota.quotas.network.security_groups }}"
-        security_group_rule: "{{ manila_secgroup_rule_num + _current_admin_quota.quotas.network.security_group_rules }}"
-        server_group_members: "{{ manila_server_group_member_num + _current_admin_quota.quotas.compute.server_group_members }}"
-        interface: public
-  rescue:
-    - debug:
-        msg: "WARNING: Failed to modify admin tenant quotas! trying to reset to defaults; please review the ansible error logs"
-    - name: set the quota to defaults for the admin tenant
+    - name: Fetch current quotas for the admin tenant
       openstack.cloud.quota:
-        state: absent
         name: "{{ admin_project_name | default('admin') }}"
-        interface: public
+        interface: internal
+      register: _current_admin_quota
+      environment:
+        HOME: "{{ ubuntu_home }}"
+
+    - name: Calculate new quota values
+      ansible.builtin.set_fact:
+        _new_instances: "{{ (manila_instances_num | int) + (_current_admin_quota.quotas.compute.instances | int) }}"
+        _new_cores: "{{ (manila_cores_num | int) + (_current_admin_quota.quotas.compute.cores | int) }}"
+        _new_ram: "{{ (manila_ram_mb | int) + (_current_admin_quota.quotas.compute.ram | int) }}"
+        _new_ports: "{{ (manila_ports_num | int) + (_current_admin_quota.quotas.network.ports | int) }}"
+        _new_secgroups: "{{ (manila_secgroup_num | int) + (_current_admin_quota.quotas.network.security_groups | int) }}"
+        _new_secgroup_rules: "{{ (manila_secgroup_rule_num | int) + (_current_admin_quota.quotas.network.security_group_rules | int) }}"
+        _new_server_groups: "{{ (manila_server_groups_num | int) + (_current_admin_quota.quotas.compute.server_groups | int) }}"
+        _new_server_group_members: "{{ (manila_server_group_member_num | int) + (_current_admin_quota.quotas.compute.server_group_members | int) }}"
+
+    - name: Display current and new quota values
+      ansible.builtin.debug:
+        msg:
+          - "instances           : {{ _current_admin_quota.quotas.compute.instances }}  →  {{ _new_instances }}"
+          - "cores               : {{ _current_admin_quota.quotas.compute.cores }}  →  {{ _new_cores }}"
+          - "ram (MB)            : {{ _current_admin_quota.quotas.compute.ram }}  →  {{ _new_ram }}"
+          - "ports               : {{ _current_admin_quota.quotas.network.ports }}  →  {{ _new_ports }}"
+          - "security_groups     : {{ _current_admin_quota.quotas.network.security_groups }}  →  {{ _new_secgroups }}"
+          - "security_group_rules: {{ _current_admin_quota.quotas.network.security_group_rules }}  →  {{ _new_secgroup_rules }}"
+          - "server_groups       : {{ _current_admin_quota.quotas.compute.server_groups }}  →  {{ _new_server_groups }}"
+          - "server_group_members: {{ _current_admin_quota.quotas.compute.server_group_members }}  →  {{ _new_server_group_members }}"
+
+    - name: Apply increased quotas to admin tenant
+      openstack.cloud.quota:
+        name: "{{ admin_project_name | default('admin') }}"
+        instances: "{{ _new_instances }}"
+        cores: "{{ _new_cores }}"
+        ram: "{{ _new_ram }}"
+        port: "{{ _new_ports }}"
+        security_group: "{{ _new_secgroups }}"
+        security_group_rule: "{{ _new_secgroup_rules }}"
+        server_groups: "{{ _new_server_groups }}"
+        server_group_members: "{{ _new_server_group_members }}"
+        interface: internal
+      environment:
+        HOME: "{{ ubuntu_home }}"
+
+    - name: Write marker file to prevent re-application
+      ansible.builtin.copy:
+        content: |
+          # Manila admin tenant quota increase applied by manila_preconf role.
+          # Delete this file to allow the quota adjustment to run again.
+          # Applied: {{ ansible_date_time.iso8601 | default(lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ')) }}
+          instances: +{{ manila_instances_num }}
+          cores: +{{ manila_cores_num }}
+          ram_mb: +{{ manila_ram_mb }}
+          ports: +{{ manila_ports_num }}
+          security_groups: +{{ manila_secgroup_num }}
+          security_group_rules: +{{ manila_secgroup_rule_num }}
+          server_groups: +{{ manila_server_groups_num }}
+          server_group_members: +{{ manila_server_group_member_num }}
+        dest: /etc/genestack/.manila_quotas_applied
+        mode: "0644"
+
+  rescue:
+    - name: Quota adjustment failed
+      ansible.builtin.debug:
+        msg: "WARNING: Failed to modify admin tenant quotas. Review the error above. Quotas have NOT been changed."

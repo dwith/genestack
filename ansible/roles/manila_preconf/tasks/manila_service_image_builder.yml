@@ -1,622 +1,548 @@
 ---
-- name: Build and Upload Manila Service Image
-  hosts: localhost
-  gather_facts: false
-  become: true
-  become_user: ubuntu
+# Build and upload the Manila service image to Glance.
+# Imported from main.yml with become: true / become_user: ubuntu.
+# Tasks that require root override with become_user: root.
 
-  vars:
-    tmp_dir: /tmp
-    build_dir: "{{ tmp_dir }}/manila-service-image-build"
-    venv_dir: "{{ tmp_dir }}/manila-service-image-build/manila-tox-image-build"
-    manila_service_image_version: noble
-    manila_service_image_name: manila-service-image
-    manila_keypair_name: manila-service-keypair
-    genestack_rc: /opt/genestack/scripts/genestack.rc
-    genestack_venv: /home/ubuntu/.venvs/genestack
-    ubuntu_home: /home/ubuntu
-    os_cloud: default
+# =========================================================================
+# PART 1: BOOTSTRAP
+# Always runs. Installs tooling, prepares the build tree, patches scripts.
+# =========================================================================
 
-    # =========================================================================
-    # Force / mode flags — all default to false (safe, non-destructive).
-    # Pass on the command line with -e to select an operating mode:
-    #
-    #   Default (no flags)
-    #     Skip keypair creation if manila-service-keypair already exists in
-    #     OpenStack. Skip image build and upload if manila-service-image already
-    #     exists. Idempotent — safe to re-run after a successful deployment.
-    #
-    #   Option 1 — rebuild image only, keypair unchanged
-    #     -e force_rebuild_image=true
-    #     Verifies the k8s secret public key fingerprint matches the existing
-    #     OpenStack keypair. Fails if they diverge. Deletes the existing
-    #     Glance image, rebuilds with the current keypair, and re-uploads.
-    #
-    #   Option 2 — replace OpenStack keypair from k8s secret, then rebuild
-    #     -e force_recreate_keypair=true
-    #     Deletes the existing OpenStack keypair and re-creates it from the
-    #     current k8s secret values. Then deletes the existing Glance image,
-    #     rebuilds with the refreshed keypair, and re-uploads.
-    #
-    #   Option 3 — regenerate k8s secret, replace keypair, rebuild image
-    #     -e force_full_recreation=true
-    #     Generates a brand-new RSA keypair and patches the
-    #     manila-service-keypair Kubernetes secret with the new material.
-    #     Then performs all actions of option 2 (delete/recreate OpenStack
-    #     keypair, delete/rebuild/re-upload Glance image).
-    #
-    # Higher options are supersets: force_full_recreation implies all actions
-    # of force_recreate_keypair, which implies all actions of force_rebuild_image.
-    # =========================================================================
-    force_rebuild_image: false
-    force_recreate_keypair: false
-    force_full_recreation: false
+- name: Install python-manilaclient into genestack virtualenv
+  ansible.builtin.pip:
+    virtualenv: "{{ genestack_venv }}"
+    name: python-manilaclient
+    state: present
 
-  tasks:
+- name: Create build directory
+  ansible.builtin.file:
+    path: "{{ manila_build_dir }}"
+    state: directory
+    mode: "0755"
 
-    # =========================================================================
-    # PART 1: BOOTSTRAP
-    # Always runs. Installs tooling, prepares the build tree, patches scripts.
-    # =========================================================================
+- name: Delete old manila-image-elements directory if it exists
+  ansible.builtin.file:
+    path: "{{ manila_build_dir }}/manila-image-elements"
+    state: absent
+  become_user: root
 
-    - name: Install python-manilaclient into genestack virtualenv
-      ansible.builtin.pip:
-        virtualenv: "{{ genestack_venv }}"
-        name: python-manilaclient
-        state: present
+- name: Clone manila-image-elements repository
+  ansible.builtin.git:
+    repo: https://opendev.org/openstack/manila-image-elements
+    dest: "{{ manila_build_dir }}/manila-image-elements"
+    force: false
 
-    - name: Create build directory
-      ansible.builtin.file:
-        path: "{{ build_dir }}"
-        state: directory
-        mode: "0755"
+# qemu-utils provides qemu-img, required by diskimage-builder at runtime.
+- name: Install QEMU and image-build system dependencies
+  ansible.builtin.apt:
+    name:
+      - qemu-system
+      - qemu-system-arm
+      - qemu-system-mips
+      - qemu-system-ppc
+      - qemu-system-sparc
+      - qemu-system-x86
+      - qemu-system-s390x
+      - qemu-system-misc
+      - qemu-utils
+      - debootstrap
+      - tox
+    state: present
+    update_cache: true
+  become_user: root
+  environment:
+    DEBIAN_FRONTEND: noninteractive
 
-    - name: Clone manila-image-elements repository
-      ansible.builtin.git:
-        repo: https://opendev.org/openstack/manila-image-elements
-        dest: "{{ build_dir }}/manila-image-elements"
-        force: false
+- name: Create Manila build virtualenv
+  ansible.builtin.pip:
+    virtualenv: "{{ manila_venv_dir }}"
+    virtualenv_command: python3 -m venv
+    name: pip
+    state: latest
 
-    # qemu-utils provides qemu-img, required by diskimage-builder at runtime.
-    - name: Install QEMU and image-build system dependencies
-      ansible.builtin.apt:
-        name:
-          - qemu-system
-          - qemu-system-arm
-          - qemu-system-mips
-          - qemu-system-ppc
-          - qemu-system-sparc
-          - qemu-system-x86
-          - qemu-system-s390x
-          - qemu-system-misc
-          - qemu-utils
-          - debootstrap
-          - tox
-        state: present
-        update_cache: true
-      become_user: root
-      environment:
-        DEBIAN_FRONTEND: noninteractive
+- name: Install manila-image-elements Python requirements
+  ansible.builtin.pip:
+    virtualenv: "{{ manila_venv_dir }}"
+    requirements: "{{ manila_build_dir }}/manila-image-elements/requirements.txt"
 
-    - name: Create Manila build virtualenv
-      ansible.builtin.pip:
-        virtualenv: "{{ venv_dir }}"
-        virtualenv_command: python3 -m venv
-        name: pip
-        state: latest
+- name: Install manila-image-elements test requirements
+  ansible.builtin.pip:
+    virtualenv: "{{ manila_venv_dir }}"
+    requirements: "{{ manila_build_dir }}/manila-image-elements/test-requirements.txt"
 
-    - name: Install manila-image-elements Python requirements
-      ansible.builtin.pip:
-        virtualenv: "{{ venv_dir }}"
-        requirements: "{{ build_dir }}/manila-image-elements/requirements.txt"
+- name: Set MANILA_IMG_OS_VER to "{{ manila_service_image_version }}" in manila-image-create
+  ansible.builtin.replace:
+    path: "{{ manila_build_dir }}/manila-image-elements/bin/manila-image-create"
+    regexp: 'MANILA_IMG_OS_VER=\$\{MANILA_IMG_OS_VER:-".*"\}'
+    replace: 'MANILA_IMG_OS_VER=${MANILA_IMG_OS_VER:-"{{ manila_service_image_version }}"}'
 
-    - name: Install manila-image-elements test requirements
-      ansible.builtin.pip:
-        virtualenv: "{{ venv_dir }}"
-        requirements: "{{ build_dir }}/manila-image-elements/test-requirements.txt"
+- name: Set MANILA_IMG_NAME to "{{ manila_service_image_name }}" in manila-image-create
+  ansible.builtin.replace:
+    path: "{{ manila_build_dir }}/manila-image-elements/bin/manila-image-create"
+    regexp: 'MANILA_IMG_NAME=\$\{MANILA_IMG_NAME:-".*"\}'
+    replace: 'MANILA_IMG_NAME=${MANILA_IMG_NAME:-"{{ manila_service_image_name }}"}'
 
-    - name: Set MANILA_IMG_OS_VER to "{{ manila_service_image_version }}" in manila-image-create
-      ansible.builtin.replace:
-        path: "{{ build_dir }}/manila-image-elements/bin/manila-image-create"
-        regexp: 'MANILA_IMG_OS_VER=\$\{MANILA_IMG_OS_VER:-".*"\}'
-        replace: 'MANILA_IMG_OS_VER=${MANILA_IMG_OS_VER:-"{{ manila_service_image_version }}"}'
+# Uses Python str.replace() — the multi-step sed approach in the original
+# script cascades incorrectly; the replace module can't handle replacements
+# ending in '\' (Python re.sub raises "bad escape").
+- name: Patch samba packages in Dockerfile
+  ansible.builtin.shell: |
+    python3 << 'EOF'
+    with open('Dockerfile', 'r') as f:
+        content = f.read()
+    content = content.replace(
+        '      samba \\\n',
+        '      samba-common \\\n      samba-common-bin \\\n'
+    )
+    with open('Dockerfile', 'w') as f:
+        f.write(content)
+    EOF
+  args:
+    executable: /bin/bash
+    chdir: "{{ manila_build_dir }}/manila-image-elements/data/docker"
 
-    - name: Set MANILA_IMG_NAME to "{{ manila_service_image_name }}" in manila-image-create
-      ansible.builtin.replace:
-        path: "{{ build_dir }}/manila-image-elements/bin/manila-image-create"
-        regexp: 'MANILA_IMG_NAME=\$\{MANILA_IMG_NAME:-".*"\}'
-        replace: 'MANILA_IMG_NAME=${MANILA_IMG_NAME:-"{{ manila_service_image_name }}"}'
+- name: Add curl to package-installs.yaml if not already present
+  ansible.builtin.lineinfile:
+    path: "{{ manila_build_dir }}/manila-image-elements/elements/manila-ssh/package-installs.yaml"
+    line: "curl:"
+    regexp: "curl"
+    state: present
 
-    # Uses Python str.replace() — the multi-step sed approach in the original
-    # script cascades incorrectly; the replace module can't handle replacements
-    # ending in '\' (Python re.sub raises "bad escape").
-    - name: Patch samba packages in Dockerfile
-      ansible.builtin.shell: |
-        python3 << 'EOF'
-        with open('Dockerfile', 'r') as f:
-            content = f.read()
-        content = content.replace(
-            '      samba \\\n',
-            '      samba-common \\\n      samba-common-bin \\\n'
-        )
-        with open('Dockerfile', 'w') as f:
-            f.write(content)
-        EOF
-      args:
-        executable: /bin/bash
-        chdir: "{{ build_dir }}/manila-image-elements/data/docker"
+# =========================================================================
+# PART 2: STATE DETECTION
+# Probe OpenStack to learn what already exists, then derive the set of
+# actions that need to run based on current state + force flags.
+# =========================================================================
 
-    - name: Add curl to package-installs.yaml if not already present
-      ansible.builtin.lineinfile:
-        path: "{{ build_dir }}/manila-image-elements/elements/manila-ssh/package-installs.yaml"
-        line: "curl:"
-        regexp: "curl"
-        state: present
+- name: Check if {{ manila_keypair_name }} exists in OpenStack
+  ansible.builtin.shell: |
+    source {{ genestack_venv }}/bin/activate
+    set -a
+    source {{ genestack_rc }}
+    set +a
+    openstack --os-cloud={{ os_cloud }} keypair show {{ manila_keypair_name }} \
+      -f json 2>/dev/null
+  args:
+    executable: /bin/bash
+  environment:
+    HOME: "{{ ubuntu_home }}"
+  register: keypair_check
+  changed_when: false
+  failed_when: false
 
-    # =========================================================================
-    # PART 2: STATE DETECTION
-    # Probe OpenStack to learn what already exists, then derive the set of
-    # actions that need to run based on current state + force flags.
-    # =========================================================================
+- name: Check if {{ manila_service_image_name }} exists in OpenStack
+  ansible.builtin.shell: |
+    source {{ genestack_venv }}/bin/activate
+    set -a
+    source {{ genestack_rc }}
+    set +a
+    openstack --os-cloud={{ os_cloud }} image show {{ manila_service_image_name }} \
+      -f json 2>/dev/null
+  args:
+    executable: /bin/bash
+  environment:
+    HOME: "{{ ubuntu_home }}"
+  register: image_check
+  changed_when: false
+  failed_when: false
 
-    - name: Check if {{ manila_keypair_name }} exists in OpenStack
-      ansible.builtin.shell: |
-        source {{ genestack_venv }}/bin/activate
-        set -a
-        source {{ genestack_rc }}
-        set +a
-        openstack --os-cloud={{ os_cloud }} keypair show {{ manila_keypair_name }} \
-          -f json 2>/dev/null
-      args:
-        executable: /bin/bash
-      environment:
-        HOME: "{{ ubuntu_home }}"
-      register: keypair_check
-      changed_when: false
-      failed_when: false
+- name: Derive action flags from current state and force options
+  ansible.builtin.set_fact:
+    keypair_exists: "{{ keypair_check.rc == 0 }}"
+    image_exists: "{{ image_check.rc == 0 }}"
+    # secrets_changed is true when manila_k8s_secrets.yml created or recreated secrets
+    secrets_changed: "{{ manila_secrets_recreated | default(false) | bool }}"
+    do_regenerate_k8s: "{{ force_full_recreation | bool }}"
+    do_delete_keypair: >-
+      {{ (force_recreate_keypair | bool)
+         or (force_full_recreation | bool)
+         or (manila_secrets_recreated | default(false) | bool) }}
+    do_create_keypair: >-
+      {{ (keypair_check.rc != 0)
+         or (force_recreate_keypair | bool)
+         or (force_full_recreation | bool)
+         or (manila_secrets_recreated | default(false) | bool) }}
+    do_rebuild_image: >-
+      {{ (image_check.rc != 0)
+         or (force_rebuild_image | bool)
+         or (force_recreate_keypair | bool)
+         or (force_full_recreation | bool)
+         or (manila_secrets_recreated | default(false) | bool) }}
 
-    - name: Check if {{ manila_service_image_name }} exists in OpenStack
-      ansible.builtin.shell: |
-        source {{ genestack_venv }}/bin/activate
-        set -a
-        source {{ genestack_rc }}
-        set +a
-        openstack --os-cloud={{ os_cloud }} image show {{ manila_service_image_name }} \
-          -f json 2>/dev/null
-      args:
-        executable: /bin/bash
-      environment:
-        HOME: "{{ ubuntu_home }}"
-      register: image_check
-      changed_when: false
-      failed_when: false
+- name: Display planned actions
+  ansible.builtin.debug:
+    msg:
+      - "State ──────────────────────────────────────────"
+      - "  keypair exists in OpenStack : {{ keypair_exists }}"
+      - "  image exists in OpenStack   : {{ image_exists }}"
+      - "  secrets were (re)created    : {{ secrets_changed }}"
+      - "Actions ────────────────────────────────────────"
+      - "  regenerate k8s secret       : {{ do_regenerate_k8s }}"
+      - "  delete/recreate keypair     : {{ do_delete_keypair }} / {{ do_create_keypair }}"
+      - "  rebuild + upload image      : {{ do_rebuild_image }}"
 
-    - name: Derive action flags from current state and force options
-      ansible.builtin.set_fact:
-        keypair_exists: "{{ keypair_check.rc == 0 }}"
-        image_exists: "{{ image_check.rc == 0 }}"
-        # Regenerate the k8s secret with a brand-new SSH keypair (option 3 only)
-        do_regenerate_k8s: "{{ force_full_recreation | bool }}"
-        # Delete and re-create the OpenStack keypair (options 2 and 3)
-        do_delete_keypair: "{{ (force_recreate_keypair | bool) or (force_full_recreation | bool) }}"
-        # Create the OpenStack keypair: first run, or after deletion in options 2/3
-        do_create_keypair: >-
-          {{ (keypair_check.rc != 0)
-             or (force_recreate_keypair | bool)
-             or (force_full_recreation | bool) }}
-        # Build and upload the image: first run, or any force option
-        do_rebuild_image: >-
-          {{ (image_check.rc != 0)
-             or (force_rebuild_image | bool)
-             or (force_recreate_keypair | bool)
-             or (force_full_recreation | bool) }}
+# =========================================================================
+# PART 3: K8S SECRET REGENERATION  (option 3 only)
+# When force_full_recreation=true, ALL K8s secrets (including the keypair)
+# are already regenerated upstream in manila_k8s_secrets.yml.  This part
+# is now a no-op for that path.  It is kept as a safety net in case
+# someone later adds a keypair-only regeneration path that doesn't go
+# through the full secrets flow.
+# =========================================================================
 
-    - name: Display planned actions
-      ansible.builtin.debug:
-        msg:
-          - "State ──────────────────────────────────────────"
-          - "  keypair exists in OpenStack : {{ keypair_exists }}"
-          - "  image exists in OpenStack   : {{ image_exists }}"
-          - "Actions ────────────────────────────────────────"
-          - "  regenerate k8s secret       : {{ do_regenerate_k8s }}"
-          - "  delete/recreate keypair     : {{ do_delete_keypair }} / {{ do_create_keypair }}"
-          - "  rebuild + upload image      : {{ do_rebuild_image }}"
+- name: "Part 3 — skipped (keypair already regenerated by manila_k8s_secrets)"
+  ansible.builtin.debug:
+    msg: "Keypair K8s secret was already regenerated in the secrets task. Skipping Part 3."
+  when: do_regenerate_k8s | bool
 
-    # =========================================================================
-    # PART 3: K8S SECRET REGENERATION  (option 3 only)
-    # Generates a new 4096-bit RSA keypair and patches the k8s secret in-place.
-    # Uses kubectl create --dry-run | apply to handle both create and update.
-    # =========================================================================
+# =========================================================================
+# PART 4: RETRIEVE K8S PUBLIC KEY
+# Always runs — the public key is needed both for the build and for
+# fingerprint verification in option 1.
+# =========================================================================
 
-    - name: Generate new Manila service SSH keypair
-      ansible.builtin.shell: |
-        ssh-keygen -t rsa -b 4096 \
-          -f /tmp/manila-new-keypair \
-          -N "" \
-          -C "{{ manila_keypair_name }}" \
-          -q
-      args:
-        executable: /bin/bash
-      when: do_regenerate_k8s | bool
+- name: Retrieve Manila service public key from Kubernetes secret
+  ansible.builtin.shell: |
+    source {{ genestack_venv }}/bin/activate
+    set -a
+    source {{ genestack_rc }}
+    set +a
+    kubectl -n openstack get secrets/{{ manila_keypair_name }} \
+      --template={{ '{{' }}.data.public_key{{ '}}' }} | base64 -d
+  args:
+    executable: /bin/bash
+  environment:
+    HOME: "{{ ubuntu_home }}"
+  register: manila_public_key
+  changed_when: false
 
-    - name: Update {{ manila_keypair_name }} Kubernetes secret with new key material
-      ansible.builtin.shell: |
-        source {{ genestack_venv }}/bin/activate
-        set -a
-        source {{ genestack_rc }}
-        set +a
-        kubectl -n openstack create secret generic {{ manila_keypair_name }} \
-          --from-file=public_key=/tmp/manila-new-keypair.pub \
-          --from-file=private_key=/tmp/manila-new-keypair \
-          --dry-run=client -o yaml | kubectl apply -f -
-      args:
-        executable: /bin/bash
-      environment:
-        HOME: "{{ ubuntu_home }}"
-      when: do_regenerate_k8s | bool
+- name: Write Manila service public key to file
+  ansible.builtin.copy:
+    content: "{{ manila_public_key.stdout }}"
+    dest: "{{ manila_build_dir }}/manila-image-elements/manila-service-keypair.pub"
+    owner: ubuntu
+    group: ubuntu
+    mode: "0644"
 
-    - name: Remove temporary generated keypair files
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - /tmp/manila-new-keypair
-        - /tmp/manila-new-keypair.pub
-      when: do_regenerate_k8s | bool
+- name: Strip inherited ACLs from Manila service public key file
+  ansible.builtin.shell: >
+    setfacl -b {{ manila_build_dir }}/manila-image-elements/manila-service-keypair.pub
+  args:
+    executable: /bin/bash
+  changed_when: false
 
-    # =========================================================================
-    # PART 4: RETRIEVE K8S PUBLIC KEY
-    # Always runs — the public key is needed both for the build and for
-    # fingerprint verification in option 1.
-    # =========================================================================
+# =========================================================================
+# PART 5: KEYPAIR SAFETY CHECK  (option 1 only)
+# When only a rebuild is requested (not a keypair replacement), verify that
+# the public key in the k8s secret matches the fingerprint of the keypair
+# already registered in OpenStack.
+# =========================================================================
 
-    - name: Retrieve Manila service public key from Kubernetes secret
-      ansible.builtin.shell: |
-        source {{ genestack_venv }}/bin/activate
-        set -a
-        source {{ genestack_rc }}
-        set +a
-        kubectl -n openstack get secrets/{{ manila_keypair_name }} \
-          --template={{ '{{' }}.data.public_key{{ '}}' }} | base64 -d
-      args:
-        executable: /bin/bash
-      environment:
-        HOME: "{{ ubuntu_home }}"
-      register: manila_public_key
-      changed_when: false
+- name: Verify k8s public key fingerprint matches existing OpenStack keypair
+  ansible.builtin.shell: |
+    source {{ genestack_venv }}/bin/activate
+    set -a
+    source {{ genestack_rc }}
+    set +a
 
-    - name: Write Manila service public key to file
-      ansible.builtin.copy:
-        content: "{{ manila_public_key.stdout }}"
-        dest: "{{ build_dir }}/manila-image-elements/manila-service-keypair.pub"
-        owner: ubuntu
-        group: ubuntu
-        mode: "0644"
+    OS_FP=$(openstack --os-cloud={{ os_cloud }} keypair show {{ manila_keypair_name }} \
+      -f json | jq -r .fingerprint)
+    K8S_FP=$(ssh-keygen -l -E md5 \
+      -f {{ manila_build_dir }}/manila-image-elements/manila-service-keypair.pub \
+      | awk '{print $2}' | sed 's/MD5://')
 
-    - name: Strip inherited ACLs from Manila service public key file
-      ansible.builtin.shell: >
-        setfacl -b {{ build_dir }}/manila-image-elements/manila-service-keypair.pub
-      args:
-        executable: /bin/bash
-      changed_when: false
+    if [ "$OS_FP" != "$K8S_FP" ]; then
+      echo "ERROR: Fingerprint mismatch — cannot safely rebuild image."
+      echo "  OpenStack keypair fingerprint : $OS_FP"
+      echo "  k8s secret fingerprint        : $K8S_FP"
+      echo "  To resolve, use -e force_recreate_keypair=true (option 2)"
+      echo "  or -e force_full_recreation=true (option 3)."
+      exit 1
+    fi
+    echo "OK: Fingerprint match confirmed ($OS_FP)"
+  args:
+    executable: /bin/bash
+  environment:
+    HOME: "{{ ubuntu_home }}"
+  changed_when: false
+  when:
+    - force_rebuild_image | bool
+    - not (force_recreate_keypair | bool)
+    - not (force_full_recreation | bool)
+    - keypair_exists | bool
 
-    # =========================================================================
-    # PART 5: KEYPAIR SAFETY CHECK  (option 1 only)
-    # When only a rebuild is requested (not a keypair replacement), verify that
-    # the public key in the k8s secret matches the fingerprint of the keypair
-    # already registered in OpenStack. Fails loudly if they diverge to prevent
-    # building an image baked with the wrong key.
-    # =========================================================================
+# =========================================================================
+# PART 6: KEYPAIR MANAGEMENT
+# =========================================================================
 
-    - name: Verify k8s public key fingerprint matches existing OpenStack keypair
-      ansible.builtin.shell: |
-        source {{ genestack_venv }}/bin/activate
-        set -a
-        source {{ genestack_rc }}
-        set +a
+- name: Delete existing OpenStack keypair (options 2 and 3)
+  ansible.builtin.shell: |
+    source {{ genestack_venv }}/bin/activate
+    set -a
+    source {{ genestack_rc }}
+    set +a
+    openstack --os-cloud={{ os_cloud }} keypair delete {{ manila_keypair_name }}
+  args:
+    executable: /bin/bash
+  environment:
+    HOME: "{{ ubuntu_home }}"
+  when:
+    - do_delete_keypair | bool
+    - keypair_exists | bool
 
-        OS_FP=$(openstack --os-cloud={{ os_cloud }} keypair show {{ manila_keypair_name }} \
-          -f json | jq -r .fingerprint)
-        K8S_FP=$(ssh-keygen -l -E md5 \
-          -f {{ build_dir }}/manila-image-elements/manila-service-keypair.pub \
-          | awk '{print $2}' | sed 's/MD5://')
+- name: Create Manila service keypair in OpenStack
+  ansible.builtin.shell: |
+    source {{ genestack_venv }}/bin/activate
+    set -a
+    source {{ genestack_rc }}
+    set +a
+    openstack --os-cloud={{ os_cloud }} keypair create --public-key \
+      {{ manila_build_dir }}/manila-image-elements/manila-service-keypair.pub \
+      {{ manila_keypair_name }}
+  args:
+    executable: /bin/bash
+  environment:
+    HOME: "{{ ubuntu_home }}"
+  when: do_create_keypair | bool
 
-        if [ "$OS_FP" != "$K8S_FP" ]; then
-          echo "ERROR: Fingerprint mismatch — cannot safely rebuild image."
-          echo "  OpenStack keypair fingerprint : $OS_FP"
-          echo "  k8s secret fingerprint        : $K8S_FP"
-          echo "  To resolve, use -e force_recreate_keypair=true (option 2)"
-          echo "  or -e force_full_recreation=true (option 3)."
-          exit 1
-        fi
-        echo "OK: Fingerprint match confirmed ($OS_FP)"
-      args:
-        executable: /bin/bash
-      environment:
-        HOME: "{{ ubuntu_home }}"
-      changed_when: false
-      when:
-        - force_rebuild_image | bool
-        - not (force_recreate_keypair | bool)
-        - not (force_full_recreation | bool)
-        - keypair_exists | bool
+# =========================================================================
+# PART 7: IMAGE BUILD AND UPLOAD
+# Gated by do_rebuild_image. Deletes any existing Glance image and local
+# qcow2 before building to ensure a clean slate.
+# =========================================================================
 
-    # =========================================================================
-    # PART 6: KEYPAIR MANAGEMENT
-    # =========================================================================
+- name: Retrieve Manila admin password from Kubernetes secret
+  ansible.builtin.shell: |
+    source {{ genestack_venv }}/bin/activate
+    set -a
+    source {{ genestack_rc }}
+    set +a
+    kubectl -n openstack get secrets/manila-admin \
+      --template={{ '{{' }}.data.password{{ '}}' }} | base64 -d
+  args:
+    executable: /bin/bash
+  environment:
+    HOME: "{{ ubuntu_home }}"
+  register: manila_admin_password_result
+  changed_when: false
+  no_log: true
+  when: do_rebuild_image | bool
 
-    - name: Delete existing OpenStack keypair (options 2 and 3)
-      ansible.builtin.shell: |
-        source {{ genestack_venv }}/bin/activate
-        set -a
-        source {{ genestack_rc }}
-        set +a
-        openstack --os-cloud={{ os_cloud }} keypair delete {{ manila_keypair_name }}
-      args:
-        executable: /bin/bash
-      environment:
-        HOME: "{{ ubuntu_home }}"
-      when:
-        - do_delete_keypair | bool
-        - keypair_exists | bool
+- name: Delete existing Manila service image from OpenStack
+  ansible.builtin.shell: |
+    source {{ genestack_venv }}/bin/activate
+    set -a
+    source {{ genestack_rc }}
+    set +a
+    openstack --os-cloud={{ os_cloud }} image delete {{ manila_service_image_name }}
+  args:
+    executable: /bin/bash
+  environment:
+    HOME: "{{ ubuntu_home }}"
+  when:
+    - do_rebuild_image | bool
+    - image_exists | bool
 
-    - name: Create Manila service keypair in OpenStack
-      ansible.builtin.shell: |
-        source {{ genestack_venv }}/bin/activate
-        set -a
-        source {{ genestack_rc }}
-        set +a
-        openstack --os-cloud={{ os_cloud }} keypair create --public-key \
-          {{ build_dir }}/manila-image-elements/manila-service-keypair.pub \
-          {{ manila_keypair_name }}
-      args:
-        executable: /bin/bash
-      environment:
-        HOME: "{{ ubuntu_home }}"
-      when: do_create_keypair | bool
+- name: Delete local qcow2 to ensure a clean rebuild
+  ansible.builtin.file:
+    path: "{{ manila_build_dir }}/manila-image-elements/{{ manila_service_image_name }}.qcow2"
+    state: absent
+  become_user: root
+  when: do_rebuild_image | bool
 
-    # =========================================================================
-    # PART 7: IMAGE BUILD AND UPLOAD
-    # Gated by do_rebuild_image. Deletes any existing Glance image and local
-    # qcow2 before building to ensure a clean slate.
-    # =========================================================================
+# diskimage-builder requires root for debootstrap/mount/losetup/mknod.
+# Retries handle transient Ubuntu mirror 404 race conditions.
+- name: Clean up any stale diskimage-builder build directories
+  ansible.builtin.shell: rm -rf /tmp/dib_build.*
+  args:
+    executable: /bin/bash
+  become_user: root
+  changed_when: false
+  when: do_rebuild_image | bool
 
-    - name: Retrieve Manila admin password from Kubernetes secret
-      ansible.builtin.shell: |
-        source {{ genestack_venv }}/bin/activate
-        set -a
-        source {{ genestack_rc }}
-        set +a
-        kubectl -n openstack get secrets/manila-admin \
-          --template={{ '{{' }}.data.password{{ '}}' }} | base64 -d
-      args:
-        executable: /bin/bash
-      environment:
-        HOME: "{{ ubuntu_home }}"
-      register: manila_admin_password_result
-      changed_when: false
-      no_log: true
-      when: do_rebuild_image | bool
+- name: Build Manila service image with tox
+  ansible.builtin.shell: |
+    rm -rf /tmp/dib_build.*
+    source {{ manila_venv_dir }}/bin/activate
+    cd {{ manila_build_dir }}/manila-image-elements
+    tox -e buildimage
+  args:
+    executable: /bin/bash
+  become_user: root
+  register: tox_build_result
+  retries: 3
+  delay: 30
+  until: tox_build_result.rc == 0
+  environment:
+    HOME: "{{ ubuntu_home }}"
+    MANILA_PASSWORD: "{{ manila_admin_password_result.stdout }}"
+    MANILA_USER_AUTHORIZED_KEYS: "{{ manila_build_dir }}/manila-image-elements/manila-service-keypair.pub"
+    MANILA_IMG_NAME: "{{ manila_service_image_name }}"
+    DHCP_TIMEOUT: "900"
+  when: do_rebuild_image | bool
 
-    - name: Delete existing Manila service image from OpenStack
-      ansible.builtin.shell: |
-        source {{ genestack_venv }}/bin/activate
-        set -a
-        source {{ genestack_rc }}
-        set +a
-        openstack --os-cloud={{ os_cloud }} image delete {{ manila_service_image_name }}
-      args:
-        executable: /bin/bash
-      environment:
-        HOME: "{{ ubuntu_home }}"
-      when:
-        - do_rebuild_image | bool
-        - image_exists | bool
+- name: Upload Manila service image to OpenStack Glance
+  ansible.builtin.shell: |
+    source {{ genestack_venv }}/bin/activate
+    set -a
+    source {{ genestack_rc }}
+    set +a
+    openstack --os-cloud={{ os_cloud }} image create \
+      --disk-format qcow2 \
+      --container-format bare \
+      --private \
+      --file {{ manila_build_dir }}/manila-image-elements/{{ manila_service_image_name }}.qcow2 \
+      --progress {{ manila_service_image_name }}
+  args:
+    executable: /bin/bash
+  environment:
+    HOME: "{{ ubuntu_home }}"
+  when: do_rebuild_image | bool
 
-    - name: Delete local qcow2 to ensure a clean rebuild
-      ansible.builtin.file:
-        path: "{{ build_dir }}/manila-image-elements/{{ manila_service_image_name }}.qcow2"
-        state: absent
-      become_user: root
-      when: do_rebuild_image | bool
+# =========================================================================
+# PART 8: IMAGE SHARING
+# Runs only when a new image was built and uploaded.
+# =========================================================================
 
-    # diskimage-builder requires root for debootstrap/mount/losetup/mknod.
-    # Running as root skips its internal sudo calls, avoiding nested-sudo
-    # failures that occur when launched from within an Ansible become shell.
-    # Retries handle a transient Ubuntu mirror 404 race condition where a
-    # package version disappears between apt-get update and apt-get install.
-    - name: Clean up any stale diskimage-builder build directories
-      ansible.builtin.shell: rm -rf /tmp/dib_build.*
-      args:
-        executable: /bin/bash
-      become_user: root
-      changed_when: false
-      when: do_rebuild_image | bool
+- name: Get admin project ID
+  ansible.builtin.shell: |
+    source {{ genestack_venv }}/bin/activate
+    set -a
+    source {{ genestack_rc }}
+    set +a
+    openstack --os-cloud={{ os_cloud }} project show admin -f json | jq -r .id
+  args:
+    executable: /bin/bash
+  environment:
+    HOME: "{{ ubuntu_home }}"
+  register: admin_project_id_result
+  changed_when: false
+  when: do_rebuild_image | bool
 
-    - name: Build Manila service image with tox
-      ansible.builtin.shell: |
-        rm -rf /tmp/dib_build.*
-        source {{ venv_dir }}/bin/activate
-        cd {{ build_dir }}/manila-image-elements
-        tox -e buildimage
-      args:
-        executable: /bin/bash
-      become_user: root
-      register: tox_build_result
-      retries: 3
-      delay: 30
-      until: tox_build_result.rc == 0
-      environment:
-        HOME: "{{ ubuntu_home }}"
-        MANILA_PASSWORD: "{{ manila_admin_password_result.stdout }}"
-        MANILA_USER_AUTHORIZED_KEYS: "{{ build_dir }}/manila-image-elements/manila-service-keypair.pub"
-        MANILA_IMG_NAME: "{{ manila_service_image_name }}"
-        DHCP_TIMEOUT: "900"
-      when: do_rebuild_image | bool
+- name: Get service project ID
+  ansible.builtin.shell: |
+    source {{ genestack_venv }}/bin/activate
+    set -a
+    source {{ genestack_rc }}
+    set +a
+    openstack --os-cloud={{ os_cloud }} project show service -f json | jq -r .id
+  args:
+    executable: /bin/bash
+  environment:
+    HOME: "{{ ubuntu_home }}"
+  register: service_project_id_result
+  changed_when: false
+  when: do_rebuild_image | bool
 
-    - name: Upload Manila service image to OpenStack Glance
-      ansible.builtin.shell: |
-        source {{ genestack_venv }}/bin/activate
-        set -a
-        source {{ genestack_rc }}
-        set +a
-        openstack --os-cloud={{ os_cloud }} image create \
-          --disk-format qcow2 \
-          --container-format bare \
-          --private \
-          --file {{ build_dir }}/manila-image-elements/{{ manila_service_image_name }}.qcow2 \
-          --progress {{ manila_service_image_name }}
-      args:
-        executable: /bin/bash
-      environment:
-        HOME: "{{ ubuntu_home }}"
-      when: do_rebuild_image | bool
+- name: Get newly uploaded Manila service image ID
+  ansible.builtin.shell: |
+    source {{ genestack_venv }}/bin/activate
+    set -a
+    source {{ genestack_rc }}
+    set +a
+    openstack --os-cloud={{ os_cloud }} image show {{ manila_service_image_name }} \
+      -f json | jq -r .id
+  args:
+    executable: /bin/bash
+  environment:
+    HOME: "{{ ubuntu_home }}"
+  register: manila_image_id_result
+  changed_when: false
+  when: do_rebuild_image | bool
 
-    # =========================================================================
-    # PART 8: IMAGE SHARING
-    # Runs only when a new image was built and uploaded. Fetches the fresh
-    # image ID post-upload rather than relying on the pre-deletion state check.
-    # =========================================================================
+- name: Set project/image ID facts
+  ansible.builtin.set_fact:
+    admin_project_id: "{{ admin_project_id_result.stdout | trim }}"
+    service_project_id: "{{ service_project_id_result.stdout | trim }}"
+    manila_service_image_id: "{{ manila_image_id_result.stdout | trim }}"
+  when: do_rebuild_image | bool
 
-    - name: Get admin project ID
-      ansible.builtin.shell: |
-        source {{ genestack_venv }}/bin/activate
-        set -a
-        source {{ genestack_rc }}
-        set +a
-        openstack --os-cloud={{ os_cloud }} project show admin -f json | jq -r .id
-      args:
-        executable: /bin/bash
-      environment:
-        HOME: "{{ ubuntu_home }}"
-      register: admin_project_id_result
-      changed_when: false
-      when: do_rebuild_image | bool
+- name: Share image with admin project
+  ansible.builtin.shell: |
+    source {{ genestack_venv }}/bin/activate
+    set -a
+    source {{ genestack_rc }}
+    set +a
+    openstack --os-cloud={{ os_cloud }} image set \
+      --project {{ admin_project_id }} --shared {{ manila_service_image_id }}
+  args:
+    executable: /bin/bash
+  environment:
+    HOME: "{{ ubuntu_home }}"
+  when: do_rebuild_image | bool
 
-    - name: Get service project ID
-      ansible.builtin.shell: |
-        source {{ genestack_venv }}/bin/activate
-        set -a
-        source {{ genestack_rc }}
-        set +a
-        openstack --os-cloud={{ os_cloud }} project show service -f json | jq -r .id
-      args:
-        executable: /bin/bash
-      environment:
-        HOME: "{{ ubuntu_home }}"
-      register: service_project_id_result
-      changed_when: false
-      when: do_rebuild_image | bool
+- name: Add image to service project membership
+  ansible.builtin.shell: |
+    source {{ genestack_venv }}/bin/activate
+    set -a
+    source {{ genestack_rc }}
+    set +a
+    openstack --os-cloud={{ os_cloud }} image add project \
+      {{ manila_service_image_id }} {{ service_project_id }}
+  args:
+    executable: /bin/bash
+  environment:
+    HOME: "{{ ubuntu_home }}"
+  when: do_rebuild_image | bool
 
-    - name: Get newly uploaded Manila service image ID
-      ansible.builtin.shell: |
-        source {{ genestack_venv }}/bin/activate
-        set -a
-        source {{ genestack_rc }}
-        set +a
-        openstack --os-cloud={{ os_cloud }} image show {{ manila_service_image_name }} \
-          -f json | jq -r .id
-      args:
-        executable: /bin/bash
-      environment:
-        HOME: "{{ ubuntu_home }}"
-      register: manila_image_id_result
-      changed_when: false
-      when: do_rebuild_image | bool
+- name: Accept image membership for service project
+  ansible.builtin.shell: |
+    source {{ genestack_venv }}/bin/activate
+    set -a
+    source {{ genestack_rc }}
+    set +a
+    openstack --os-cloud={{ os_cloud }} image set \
+      --project {{ service_project_id }} --accept {{ manila_service_image_id }}
+  args:
+    executable: /bin/bash
+  environment:
+    HOME: "{{ ubuntu_home }}"
+  when: do_rebuild_image | bool
 
-    - name: Set project/image ID facts
-      ansible.builtin.set_fact:
-        admin_project_id: "{{ admin_project_id_result.stdout | trim }}"
-        service_project_id: "{{ service_project_id_result.stdout | trim }}"
-        manila_service_image_id: "{{ manila_image_id_result.stdout | trim }}"
-      when: do_rebuild_image | bool
+- name: Add image to admin project membership
+  ansible.builtin.shell: |
+    source {{ genestack_venv }}/bin/activate
+    set -a
+    source {{ genestack_rc }}
+    set +a
+    openstack --os-cloud={{ os_cloud }} image add project \
+      {{ manila_service_image_id }} {{ admin_project_id }}
+  args:
+    executable: /bin/bash
+  environment:
+    HOME: "{{ ubuntu_home }}"
+  when: do_rebuild_image | bool
 
-    - name: Share image with admin project
-      ansible.builtin.shell: |
-        source {{ genestack_venv }}/bin/activate
-        set -a
-        source {{ genestack_rc }}
-        set +a
-        openstack --os-cloud={{ os_cloud }} image set \
-          --project {{ admin_project_id }} --shared {{ manila_service_image_id }}
-      args:
-        executable: /bin/bash
-      environment:
-        HOME: "{{ ubuntu_home }}"
-      when: do_rebuild_image | bool
+- name: Accept image membership for admin project
+  ansible.builtin.shell: |
+    source {{ genestack_venv }}/bin/activate
+    set -a
+    source {{ genestack_rc }}
+    set +a
+    openstack --os-cloud={{ os_cloud }} image set \
+      --project {{ admin_project_id }} --accept {{ manila_service_image_id }}
+  args:
+    executable: /bin/bash
+  environment:
+    HOME: "{{ ubuntu_home }}"
+  when: do_rebuild_image | bool
 
-    - name: Add image to service project membership
-      ansible.builtin.shell: |
-        source {{ genestack_venv }}/bin/activate
-        set -a
-        source {{ genestack_rc }}
-        set +a
-        openstack --os-cloud={{ os_cloud }} image add project \
-          {{ manila_service_image_id }} {{ service_project_id }}
-      args:
-        executable: /bin/bash
-      environment:
-        HOME: "{{ ubuntu_home }}"
-      when: do_rebuild_image | bool
+- name: List image members
+  ansible.builtin.shell: |
+    source {{ genestack_venv }}/bin/activate
+    set -a
+    source {{ genestack_rc }}
+    set +a
+    openstack --os-cloud={{ os_cloud }} image member list {{ manila_service_image_id }}
+  args:
+    executable: /bin/bash
+  environment:
+    HOME: "{{ ubuntu_home }}"
+  register: image_member_list
+  changed_when: false
+  when: do_rebuild_image | bool
 
-    - name: Accept image membership for service project
-      ansible.builtin.shell: |
-        source {{ genestack_venv }}/bin/activate
-        set -a
-        source {{ genestack_rc }}
-        set +a
-        openstack --os-cloud={{ os_cloud }} image set \
-          --project {{ service_project_id }} --accept {{ manila_service_image_id }}
-      args:
-        executable: /bin/bash
-      environment:
-        HOME: "{{ ubuntu_home }}"
-      when: do_rebuild_image | bool
-
-    - name: Add image to admin project membership
-      ansible.builtin.shell: |
-        source {{ genestack_venv }}/bin/activate
-        set -a
-        source {{ genestack_rc }}
-        set +a
-        openstack --os-cloud={{ os_cloud }} image add project \
-          {{ manila_service_image_id }} {{ admin_project_id }}
-      args:
-        executable: /bin/bash
-      environment:
-        HOME: "{{ ubuntu_home }}"
-      when: do_rebuild_image | bool
-
-    - name: Accept image membership for admin project
-      ansible.builtin.shell: |
-        source {{ genestack_venv }}/bin/activate
-        set -a
-        source {{ genestack_rc }}
-        set +a
-        openstack --os-cloud={{ os_cloud }} image set \
-          --project {{ admin_project_id }} --accept {{ manila_service_image_id }}
-      args:
-        executable: /bin/bash
-      environment:
-        HOME: "{{ ubuntu_home }}"
-      when: do_rebuild_image | bool
-
-    - name: List image members
-      ansible.builtin.shell: |
-        source {{ genestack_venv }}/bin/activate
-        set -a
-        source {{ genestack_rc }}
-        set +a
-        openstack --os-cloud={{ os_cloud }} image member list {{ manila_service_image_id }}
-      args:
-        executable: /bin/bash
-      environment:
-        HOME: "{{ ubuntu_home }}"
-      register: image_member_list
-      changed_when: false
-      when: do_rebuild_image | bool
-
-    - name: Display image member list
-      ansible.builtin.debug:
-        msg: "{{ image_member_list.stdout_lines }}"
-      when: do_rebuild_image | bool
+- name: Display image member list
+  ansible.builtin.debug:
+    msg: "{{ image_member_list.stdout_lines }}"
+  when: do_rebuild_image | bool
