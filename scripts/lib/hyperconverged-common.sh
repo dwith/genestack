@@ -324,16 +324,16 @@ function prepareJumpHostSource() {
             exit 1
         fi
         # NOTE: we are assuming an Ubuntu (apt) based instance here
-        ssh -F ${HOME}/.ssh/hyperconverged-rxt-sjc-prod.config -i ${HOME}/.ssh/hyperconverged-key.pem -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${SSH_USERNAME}@${JUMP_HOST_VIP} \
+        ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${SSH_USERNAME}@${JUMP_HOST_VIP} \
             "while sudo fuser /var/{lib/{dpkg,apt/lists},cache/apt/archives}/lock >/dev/null 2>&1; do echo 'Waiting for apt locks to be released...'; sleep 5; done && sudo apt-get update && sudo apt install -y rsync git"
         echo "Copying the development source code to the jump host"
         rsync -avz \
-            -e "ssh -F ${HOME}/.ssh/hyperconverged-rxt-sjc-prod.config -i ${HOME}/.ssh/hyperconverged-key.pem -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no" \
+            -e "ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no" \
             --rsync-path="sudo rsync" \
             ${DEV_PATH} ${SSH_USERNAME}@${JUMP_HOST_VIP}:/opt/
-        ssh -F ${HOME}/.ssh/hyperconverged-rxt-sjc-prod.config -i ${HOME}/.ssh/hyperconverged-key.pem -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no \
+        ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no \
             ${SSH_USERNAME}@${JUMP_HOST_VIP} \
-            "sudo chgrp -R ubuntu /opt/$(basename ${DEV_PATH})"
+            "sudo chown -R ubuntu:ubuntu /opt/$(basename ${DEV_PATH})"
     else
         cloneGenestackOnJumpHost
     fi
@@ -1314,7 +1314,7 @@ writeEndpointsConfig '${gateway_domain}' '/etc/genestack/helm-configs/global_ove
 writeOpenstackComponentsConfig '/etc/genestack/openstack-components.yaml' "${os_config}"
 echo 'Genestack service configuration complete'
 EOF
-    } | ssh -F ${HOME}/.ssh/hyperconverged-rxt-sjc-prod.config -i ${HOME}/.ssh/hyperconverged-key.pem -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t "${ssh_user}@${jump_host}" bash
+    } | ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t "${ssh_user}@${jump_host}" bash
 }
 
 function runGenestackSetupRemote() {
@@ -1339,7 +1339,7 @@ set -e
 ensureYq
 runGenestackSetup "${gateway_domain}" "${acme_email}" ${disable_openstack}
 EOF
-    } | ssh -F ${HOME}/.ssh/hyperconverged-rxt-sjc-prod.config -i ${HOME}/.ssh/hyperconverged-key.pem -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${ssh_user}@${jump_host} bash
+    } | ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${ssh_user}@${jump_host} bash
 }
 
 function waitForOpenStackAPIsReady() {
@@ -1452,7 +1452,7 @@ function waitForOpenStackAPIsReadyRemote() {
 set -e
 waitForOpenStackAPIsReady "${timeout}"
 EOF
-    } | ssh -F ${HOME}/.ssh/hyperconverged-rxt-sjc-prod.config -i ${HOME}/.ssh/hyperconverged-key.pem -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${ssh_user}@${jump_host} bash
+    } | ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${ssh_user}@${jump_host} bash
 }
 
 function createPostSetupResourcesRemote() {
@@ -1476,7 +1476,7 @@ ensureYq
 createPostSetupResources "${lab_prefix}"
 EOF
 
-    } | ssh -F ${HOME}/.ssh/hyperconverged-rxt-sjc-prod.config -i ${HOME}/.ssh/hyperconverged-key.pem -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${ssh_user}@${jump_host} bash
+    } | ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${ssh_user}@${jump_host} bash
 }
 
 function installK9sRemote() {
@@ -1495,13 +1495,13 @@ function installK9sRemote() {
 set -e
 installK9s
 EOF
-    } | ssh -F ${HOME}/.ssh/hyperconverged-rxt-sjc-prod.config -i ${HOME}/.ssh/hyperconverged-key.pem -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${ssh_user}@${jump_host} bash
+    } | ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${ssh_user}@${jump_host} bash
 }
 
 function cloneGenestackOnJumpHost() {
     # Clone the Genestack repository on the jump host
     # Usage: cloneGenestackOnJumpHost
-    ssh -F ${HOME}/.ssh/hyperconverged-rxt-sjc-prod.config -i ${HOME}/.ssh/hyperconverged-key.pem -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${SSH_USERNAME}@${JUMP_HOST_VIP} <<EOC
+    ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${SSH_USERNAME}@${JUMP_HOST_VIP} <<EOC
     set -e
     if [ ! -d "/opt/genestack" ]; then
         sudo git clone --recurse-submodules -j4 https://github.com/rackerlabs/genestack /opt/genestack
@@ -1589,21 +1589,21 @@ echo "[JUMP_HOST] Creating PV/VG"
 sudo pvcreate /dev/vdd
 sudo vgcreate cinder-volumes-1 /dev/vdd
 JUMP_HOST_EOF
-    } | ssh -F ${HOME}/.ssh/hyperconverged-rxt-sjc-prod.config -i ${HOME}/.ssh/hyperconverged-key.pem -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t "ubuntu@${JUMP_HOST_IP}" bash
+    } | ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t "ubuntu@${JUMP_HOST_IP}" bash
 
     # Secondary Kube node setup
     {
         cat << NODE_1_EOF
 echo "[Node 1] Creating PV/VG"
-ssh -F ${HOME}/.ssh/hyperconverged-rxt-sjc-prod.config -i ${HOME}/.ssh/hyperconverged-key.pem -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ubuntu@${LAB_NAME_PREFIX}-1 "sudo pvcreate /dev/vdd && sudo vgcreate cinder-volumes-1 /dev/vdd"
+ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ubuntu@${LAB_NAME_PREFIX}-1 "sudo pvcreate /dev/vdd && sudo vgcreate cinder-volumes-1 /dev/vdd"
 NODE_1_EOF
-    } | ssh -F ${HOME}/.ssh/hyperconverged-rxt-sjc-prod.config -i ${HOME}/.ssh/hyperconverged-key.pem -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t "ubuntu@${JUMP_HOST_IP}" bash
+    } | ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t "ubuntu@${JUMP_HOST_IP}" bash
     {
         cat << NODE_2_EOF
 echo "[Node 2] Creating PV/VG"
-ssh -F ${HOME}/.ssh/hyperconverged-rxt-sjc-prod.config -i ${HOME}/.ssh/hyperconverged-key.pem -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ubuntu@${LAB_NAME_PREFIX}-2 "sudo pvcreate /dev/vdd && sudo vgcreate cinder-volumes-1 /dev/vdd"
+ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ubuntu@${LAB_NAME_PREFIX}-2 "sudo pvcreate /dev/vdd && sudo vgcreate cinder-volumes-1 /dev/vdd"
 NODE_2_EOF
-    } | ssh -F ${HOME}/.ssh/hyperconverged-rxt-sjc-prod.config -i ${HOME}/.ssh/hyperconverged-key.pem -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t "ubuntu@${JUMP_HOST_IP}" bash
+    } | ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t "ubuntu@${JUMP_HOST_IP}" bash
 
     # Ansible playbook time
     {
@@ -1639,12 +1639,12 @@ openstack volume qos create \
 openstack volume qos associate Standard-Block Standard
 openstack volume type set --private __DEFAULT__
 ANSIBLE_EOF
-    } | ssh -F ${HOME}/.ssh/hyperconverged-rxt-sjc-prod.config -i ${HOME}/.ssh/hyperconverged-key.pem -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t "ubuntu@${JUMP_HOST_IP}" bash
+    } | ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t "ubuntu@${JUMP_HOST_IP}" bash
 }
 
 function install_preconf_octavia() {
     echo "Installing Octavia preconf"
-    ssh -F ${HOME}/.ssh/hyperconverged-rxt-sjc-prod.config -i ${HOME}/.ssh/hyperconverged-key.pem -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${SSH_USERNAME}@${JUMP_HOST_VIP} << 'EOC'
+    ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${SSH_USERNAME}@${JUMP_HOST_VIP} << 'EOC'
 set -e
 
 if [ ! -f ~/.config/openstack ]; then
@@ -1673,7 +1673,7 @@ EOC
 
 function install_preconf_manila() {
     echo "Installing Manila preconf"
-    ssh -F ${HOME}/.ssh/hyperconverged-rxt-sjc-prod.config -i ${HOME}/.ssh/hyperconverged-key.pem -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${SSH_USERNAME}@${JUMP_HOST_VIP} << 'EOC'
+    ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${SSH_USERNAME}@${JUMP_HOST_VIP} << 'EOC'
 set -e
 
 if [ ! -f ~/.config/openstack ]; then
@@ -1686,8 +1686,8 @@ source ~/.venvs/genestack/bin/activate
 
 MANILA_HELM_FILE=/etc/genestack/helm-configs/manila-helm-overrides.yaml
 
-ANSIBLE_SSH_PIPELINING=0 ansible-playbook /opt/genestack/ansible/playbooks/manila-preconf-main.yaml \
-    -e manila_os_region_name=$(sudo ~/.venvs/genestack/bin/openstack --os-cloud=default endpoint list --service keystone --interface internal -c Region -f value)
+ANSIBLE_SSH_PIPELINING=0 ansible-playbook /opt/genestack/ansible/playbooks/manila-preconf-main.yaml
+#    -e manila_os_region_name=$(sudo ~/.venvs/genestack/bin/openstack --os-cloud=default endpoint list --service keystone --interface internal -c Region -f value)
 
 echo "Installing Manila"
 sudo /opt/genestack/bin/install-manila.sh -f $MANILA_HELM_FILE
@@ -1795,7 +1795,7 @@ sed -i "s/<keypair_name>/\$KEYPAIR_NAME/g" /etc/genestack/helm-configs/trove/tro
 
 sudo /opt/genestack/bin/install-trove.sh
 JUMP_HOST_EOF
-    } | ssh -F ${HOME}/.ssh/hyperconverged-rxt-sjc-prod.config -i ${HOME}/.ssh/hyperconverged-key.pem -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${ssh_user}@${jump_host} bash
+    } | ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${ssh_user}@${jump_host} bash
 
     {
         declare -f setupKubeConfig
@@ -1813,9 +1813,9 @@ setupKubeConfig
 echo "[${lab_prefix}-1] Creating Trove SSH key"
 TROVE_SSH_KEY=\$(/usr/local/bin/kubectl get secret trove-ssh -n openstack -o jsonpath='{.data.private-key}' | base64 --decode)
 TROVE_SSH_KEY_FILENAME="/home/${ssh_user}/.ssh/trove_ssh_key"
-ssh -F ${HOME}/.ssh/hyperconverged-rxt-sjc-prod.config -i ${HOME}/.ssh/hyperconverged-key.pem -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${ssh_user}@${lab_prefix}-1 "echo \"\${TROVE_SSH_KEY}\" > \${TROVE_SSH_KEY_FILENAME} && chown ${ssh_user}:${ssh_user} \${TROVE_SSH_KEY_FILENAME} && chmod 600 \${TROVE_SSH_KEY_FILENAME}"
+ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${ssh_user}@${lab_prefix}-1 "echo \"\${TROVE_SSH_KEY}\" > \${TROVE_SSH_KEY_FILENAME} && chown ${ssh_user}:${ssh_user} \${TROVE_SSH_KEY_FILENAME} && chmod 600 \${TROVE_SSH_KEY_FILENAME}"
 NODE_1_EOF
-    } | ssh -F ${HOME}/.ssh/hyperconverged-rxt-sjc-prod.config -i ${HOME}/.ssh/hyperconverged-key.pem -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${ssh_user}@${jump_host} bash
+    } | ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${ssh_user}@${jump_host} bash
 
     {
         declare -f setupKubeConfig
@@ -1833,7 +1833,7 @@ setupKubeConfig
 echo "[${lab_prefix}-2] Creating Trove SSH key"
 TROVE_SSH_KEY=\$(/usr/local/bin/kubectl get secret trove-ssh -n openstack -o jsonpath='{.data.private-key}' | base64 --decode)
 TROVE_SSH_KEY_FILENAME="/home/${ssh_user}/.ssh/trove_ssh_key"
-ssh -F ${HOME}/.ssh/hyperconverged-rxt-sjc-prod.config -i ${HOME}/.ssh/hyperconverged-key.pem -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${ssh_user}@${lab_prefix}-2 "echo \"\${TROVE_SSH_KEY}\" > \${TROVE_SSH_KEY_FILENAME} && chown ${ssh_user}:${ssh_user} \${TROVE_SSH_KEY_FILENAME} && chmod 600 \${TROVE_SSH_KEY_FILENAME}"
+ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${ssh_user}@${lab_prefix}-2 "echo \"\${TROVE_SSH_KEY}\" > \${TROVE_SSH_KEY_FILENAME} && chown ${ssh_user}:${ssh_user} \${TROVE_SSH_KEY_FILENAME} && chmod 600 \${TROVE_SSH_KEY_FILENAME}"
 NODE_2_EOF
-    } | ssh -F ${HOME}/.ssh/hyperconverged-rxt-sjc-prod.config -i ${HOME}/.ssh/hyperconverged-key.pem -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${ssh_user}@${jump_host} bash
+    } | ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ${ssh_user}@${jump_host} bash
 }

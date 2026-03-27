@@ -57,7 +57,7 @@ manila_region: RegionOne
 # that already lives at /etc/genestack/helm-configs/manila/.
 # Switch this to a different template when using an alternate backend driver.
 # =========================================================================
-manila_driver_config_template: manila_generic_driver_helm_config.yaml
+manila_driver_config_template: manila_default_helm_config.yaml
 
 # =========================================================================
 # Secrets
