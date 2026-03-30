@@ -1303,7 +1303,7 @@ function configureGenestackRemote() {
         declare -f installYq
 
         cat <<EOF
-export HYPERCONVERGED_CINDER_VOLUME=$HYPERCONVERGED_CINDER_VOLUME
+export HYPERCONVERGED_CINDER_VOLUME="${HYPERCONVERGED_CINDER_VOLUME}"
 export INCLUDE_LIST=("${INCLUDE_LIST[@]}")
 export EXCLUDE_LIST=("${EXCLUDE_LIST[@]}")
 set -e
@@ -1687,7 +1687,6 @@ source ~/.venvs/genestack/bin/activate
 MANILA_HELM_FILE=/etc/genestack/helm-configs/manila-helm-overrides.yaml
 
 ANSIBLE_SSH_PIPELINING=0 ansible-playbook /opt/genestack/ansible/playbooks/manila-preconf-main.yaml
-#    -e manila_os_region_name=$(sudo ~/.venvs/genestack/bin/openstack --os-cloud=default endpoint list --service keystone --interface internal -c Region -f value)
 
 echo "Installing Manila"
 sudo /opt/genestack/bin/install-manila.sh -f $MANILA_HELM_FILE
