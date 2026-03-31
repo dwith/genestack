@@ -2,22 +2,6 @@
 # defaults file for manila_preconf
 
 # =========================================================================
-# Quota defaults for admin tenant
-# Set manila_adjust_admin_quotas to false to skip quota changes entirely.
-# Quotas are only ever applied once (tracked by a marker file at
-# /etc/genestack/.manila_quotas_applied). Delete that file to re-apply.
-# =========================================================================
-manila_adjust_admin_quotas: true
-manila_instances_num: 100
-manila_cores_num: "{{ (manila_instances_num|int)*2 }}"
-manila_ram_mb: "{{ (manila_instances_num|int)*2048 }}"
-manila_ports_num: "{{ (manila_instances_num|int)*5 }}"
-manila_secgroup_num: "{{ (manila_instances_num|int)*1.5|int|abs }}"
-manila_secgroup_rule_num: "{{ (manila_secgroup_num|int)*5 }}"
-manila_server_groups_num: "{{ ((manila_instances_num|int)*0.5)|int|abs }}"
-manila_server_group_member_num: 20
-
-# =========================================================================
 # Manila service image
 # =========================================================================
 manila_service_image_version: noble

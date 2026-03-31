@@ -2,7 +2,7 @@
 # ==========================================================================
 # manage-test-tenants.sh
 #
-# Create, destroy, or reset 5 test tenant accounts with networks, subnets,
+# Create, destroy, or reset 2 test tenant accounts with networks, subnets,
 # admin users, and clouds.yaml credentials.
 #
 #   Usage:
@@ -35,7 +35,7 @@ set +a
 export HOME=/home/ubuntu
 OS="openstack --os-cloud=default"
 
-TENANTS=("acme-corp" "globex-inc" "initech" "umbrella-co" "wayne-ent")
+TENANTS=("acme-corp" "globex-inc")
 CUSTOMER_DIR=/home/ubuntu/customers
 
 # --------------------------------------------------------------------------

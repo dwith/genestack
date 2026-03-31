@@ -1,12 +1,6 @@
 ---
 # tasks file for manila_preconf
 
-- name: Import tasks for modifying the admin tenant quotas
-  import_tasks: admin_tenant_quota_setup.yml
-  tags:
-    - always
-    - post_deploy
-
 - name: Import tasks to create Manila K8s secrets
   import_tasks: manila_k8s_secrets.yml
   tags:
