@@ -389,11 +389,11 @@ nav:
   - The Rackspace Cloud:
       - Block Storage:
           - Customer Templates:
-              - rackspace-cloud-block-storage-customer-templates-unresponsive-host.md
-              - rackspace-cloud-block-storage-customer-templates-emergency-maintenance.md
-              - rackspace-cloud-block-storage-customer-templates-return-to-service-auto-close.md
-              - rackspace-cloud-block-storage-customer-templates-data-loss-auto-close.md
-          - Create and Attach a Block Storage Volume: create-and-attach-a-flex-block-storage-volume.md
-          - Detach and Delete a Block Storage Volume: detach-and-delete-flex-block-storage-volume.md
-          - Prepare Your Block Storage Volume: prepare-your-flex-block-storage-volume.md
-          - Create and Use Flex Block Storage Snapshots: create-and-use-flex-block-storage-snapshots.md
+              - rackspace-cloud/rackspace-cloud-block-storage-customer-templates-unresponsive-host.md
+              - rackspace-cloud/rackspace-cloud-block-storage-customer-templates-emergency-maintenance.md
+              - rackspace-cloud/rackspace-cloud-block-storage-customer-templates-return-to-service-auto-close.md
+              - rackspace-cloud/rackspace-cloud-block-storage-customer-templates-data-loss-auto-close.md
+          - Create and Attach a Block Storage Volume: rackspace-cloud/create-and-attach-a-flex-block-storage-volume.md
+          - Detach and Delete a Block Storage Volume: rackspace-cloud/detach-and-delete-flex-block-storage-volume.md
+          - Prepare Your Block Storage Volume: rackspace-cloud/prepare-your-flex-block-storage-volume.md
+          - Create and Use Flex Block Storage Snapshots: rackspace-cloud/create-and-use-flex-block-storage-snapshots.md

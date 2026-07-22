@@ -109,7 +109,7 @@ To detach and delete the volume, see [Detach and Delete Flex Block Storage Volum
 
 ## Next steps
 
-- [Volume QoS Policies](openstack-cinder-volume-qos-policies.md) — understand performance tiers
-- [Volume Provisioning Specs](openstack-cinder-volume-provisioning-specs.md) — size constraints and policies
-- [Volume Type Specs](openstack-cinder-volume-type-specs.md) — additional volume type properties
-- [OpenStack Snapshot](openstack-snapshot.md) — create snapshots of your volumes
+- [Volume QoS Policies](../openstack-cinder-volume-qos-policies.md) — understand performance tiers
+- [Volume Provisioning Specs](../openstack-cinder-volume-provisioning-specs.md) — size constraints and policies
+- [Volume Type Specs](../openstack-cinder-volume-type-specs.md) — additional volume type properties
+- [OpenStack Snapshot](../openstack-snapshot.md) — create snapshots of your volumes
