@@ -1587,13 +1587,13 @@ source /opt/genestack/scripts/genestack.rc
 echo "[JUMP_HOST] Running cinder install script"
 sudo /opt/genestack/bin/install-cinder.sh
 
-echo "[JUMP_HOST] Running cinder volumes playbook (2 times in case of failed steps in first run)"
+echo "[JUMP_HOST] Running cinder volumes playbook
 ansible-playbook -i /etc/genestack/inventory/inventory.yaml \
     -e "storage_network_interface=ansible_enp3s0 storage_network_interface_secondary=ansible_enp3s0" \
-    /opt/genestack/ansible/playbooks/deploy-cinder-volume.yaml -f15
-ansible-playbook -i /etc/genestack/inventory/inventory.yaml \
-    -e "storage_network_interface=ansible_enp3s0 storage_network_interface_secondary=ansible_enp3s0" \
-    /opt/genestack/ansible/playbooks/deploy-cinder-volume.yaml -f15
+    /opt/genestack/ansible/playbooks/deploy-cinder-volume.yaml -f3
+#ansible-playbook -i /etc/genestack/inventory/inventory.yaml \
+#    -e "storage_network_interface=ansible_enp3s0 storage_network_interface_secondary=ansible_enp3s0" \
+#    /opt/genestack/ansible/playbooks/deploy-cinder-volume.yaml -f15
 
 echo "[JUMP_HOST] Creating volume type and qos"
 openstack volume type create \

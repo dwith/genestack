@@ -1025,7 +1025,7 @@ echo "Applying rax.mirror -> archive.ubuntu.com workaround on jump host and work
 # Apt lock wait + sed/rm + apt-get update. The lock wait keeps us from
 # colliding with cloud-init / unattended-upgrades, which on a freshly
 # booted node hold the apt locks for several minutes after first boot.
-APT_FIX_CMD='for _i in $(seq 1 60); do sudo fuser /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock /var/cache/apt/archives/lock >/dev/null 2>&1 || break; echo "  waiting for apt locks (${_i}/60)..."; sleep 5; done; sudo sed -i "s|rax\.mirror\.rackspace\.com|archive.ubuntu.com|g" /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true; for f in /etc/apt/sources.list.d/*rax.mirror.rackspace.com*; do [ -e "$f" ] && sudo rm -f "$f"; done 2>/dev/null || true; sudo apt-get clean >/dev/null; sudo apt-get update >/dev/null'
+APT_FIX_CMD='for _i in $(seq 1 200); do sudo fuser /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock /var/cache/apt/archives/lock >/dev/null 2>&1 || break; echo "  waiting for apt locks (${_i}/200)..."; sleep 5; done; sudo sed -i "s|rax\.mirror\.rackspace\.com|archive.ubuntu.com|g" /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true; for f in /etc/apt/sources.list.d/*rax.mirror.rackspace.com*; do [ -e "$f" ] && sudo rm -f "$f"; done 2>/dev/null || true; sudo apt-get clean >/dev/null; sudo apt-get update >/dev/null'
 
 _ssh "${APT_FIX_CMD}"
 
@@ -1040,7 +1040,7 @@ for node in ${LAB_NAME_PREFIX}-1 ${LAB_NAME_PREFIX}-2; do
     echo "  Waiting for SSH on \$node..."
     for i in \$(seq 1 30); do
         ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no \$node true 2>/dev/null && break
-        sleep 5
+        sleep 10
     done
     echo "  Patching apt sources on \$node..."
     if ! ssh \$node '${APT_FIX_CMD}'; then

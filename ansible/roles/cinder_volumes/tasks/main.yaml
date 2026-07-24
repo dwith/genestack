@@ -59,8 +59,8 @@
     - cinder_volume_package_list | length > 0
   register: install_packages
   until: install_packages is success
-  retries: 5
-  delay: 2
+  retries: 20
+  delay: 5
 
 - name: Install cinder-backend distro packages
   ansible.builtin.package:
@@ -71,8 +71,8 @@
     - cinder_volume_package_list | length > 0
   register: install_backend_packages
   until: install_backend_packages is success
-  retries: 5
-  delay: 2
+  retries: 20
+  delay: 5
 
 - name: Determine iscsi initiator name
   set_fact:
