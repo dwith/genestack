@@ -2,14 +2,16 @@
 conf:
   manila:
     DEFAULT:
-      default_availability_zone: az1
       default_share_type: generic
       default_share_group_type: generic
       enabled_share_backends: generic
       storage_availability_zone: az1
+      backend_availability_zone: az1
       share_name_template: "share-%s"
       rootwrap_config: /etc/manila/rootwrap.conf
       api_paste_config: /etc/manila/api-paste.ini
+      scheduler_default_share_group_filters: AvailabilityZoneFilter,DriverFilter
+      capacity_weight_multiplier: 1.0
       enable_new_services: true
       debug: true
     generic:
@@ -28,14 +30,15 @@ conf:
       max_time_to_attach: 120
       volume_name_template: "manila-share-%s"
       volume_snapshot_name_template: "manila-snapshot-%s"
+      share_volume_fstype: ext4
       service_image_id: {{manila_service_image_id}}
       service_image_name: manila-service-image
-      service_instance_availability_zone: az1
       service_instance_user: manila
       service_instance_flavor_id: {{manila_service_instance_flavor_id}}
       service_instance_name_template: "%s"
       service_instance_security_group: manila-service-sg
       backend_availability_zone: az1
+      storage_availability_zone: az1
       lvm_share_volume_group: cinder-volumes-1
       cinder_volume_type: Standard
     generic_network:
