@@ -5,6 +5,7 @@ conf:
       default_availability_zone: az1
       default_share_type: generic
       default_share_group_type: generic
+      data_node_access_ips: "10.254.0.0/16"
       enabled_share_backends: generic
       storage_availability_zone: az1
       share_name_template: "share-%s"
@@ -16,7 +17,7 @@ conf:
       share_backend_name: GENERIC
       share_driver: manila.share.drivers.generic.GenericShareDriver
       driver_handles_share_servers: true
-      connect_share_server_to_tenant_network: true
+      connect_share_server_to_tenant_network: True
       service_network_name: manila-service-network
       manila_service_keypair_name: manila-service-keypair
       path_to_private_key: /var/lib/openstack/.ssh/manila-service-keypair.pem
@@ -35,8 +36,11 @@ conf:
       service_instance_flavor_id: {{manila_service_instance_flavor_id}}
       service_instance_name_template: "%s"
       service_instance_security_group: manila-service-sg
+      service_network_cidr: "10.254.0.0/16"
+      service_network_division_mask: 24
       backend_availability_zone: az1
       lvm_share_volume_group: cinder-volumes-1
       cinder_volume_type: Standard
     generic_network:
-      interface_driver: manila.network.linux.interface.NoopInterfaceDriver
+      interface_driver: manila.network.linux.interface.OVSInterfaceDriver
+
