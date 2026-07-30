@@ -13,7 +13,7 @@ components:
   heat: false
   keystone: true
   magnum: false
-  manila: true
+  manila: false
   masakari: false
   neutron: true
   nova: true
