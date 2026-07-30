@@ -22,7 +22,7 @@ ACTION="${1:-}"
 SHARE_SIZE=5
 VM_FLAVOR="m1.medium"
 VM_IMAGE="Ubuntu 24.04 Test Tenant"
-EXTERNAL_NETWORK="${EXTERNAL_NETWORK:-PUBLICNET}"
+EXTERNAL_NETWORK="${EXTERNAL_NETWORK:-flat}"
 
 # Parse arguments
 shift 2>/dev/null || true
