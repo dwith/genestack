@@ -18,5 +18,10 @@
   gather_facts: "{{ gather_facts | default(true) }}"
   environment: "{{ deployment_environment_variables | default({}) }}"
   become: true
+  vars:
+    cinder_rxt_rust_install: "{{ cinder_rxt_rust_install | default(true) }}"
+    cinder_rxt_rust_version: "{{ cinder_rxt_rust_version | default('1.85.0') }}"
+    cinder_rxt_rust_user: "{{ cinder_rxt_rust_user | default('root') }}"
   roles:
     - cinder_volumes
+

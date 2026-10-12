@@ -122,17 +122,64 @@
   when:
     - cinder_worker_name | lower != "lvm"
 
+- name: Install and verify Rust toolchain for cinder-rxt
+  ansible.builtin.include_tasks: install_rust.yaml
+  when:
+    - cinder_rxt_rust_install | default(true) | bool
+
 - name: Upgrade pip and install required packages
   ansible.builtin.pip:
     name:
       - pip
       - pymysql
       - "git+https://github.com/openstack/cinder@{{ cinder_release_branch }}"
-      - "git+https://github.com/rackerlabs/cinder-rxt.git"
+      - "git+{{ cinder_rxt_git_repo }}@{{ cinder_rxt_git_version }}"
     state: present
     virtualenv: "{{ cinder_virtualenv_path }}"
     virtualenv_command: python3 -m venv
     extra_args: "-c https://releases.openstack.org/constraints/upper/{{ cinder_release_branch | regex_replace('^(stable|unmaintained)/', '') }}"
+
+- name: Clone cinder-rxt repository for native snapshot worker compilation
+  ansible.builtin.git:
+    repo: "{{ cinder_rxt_git_repo }}"
+    dest: /opt/cinder-rxt-src
+    version: "{{ cinder_rxt_git_version }}"
+    force: true
+  register: _cinder_rxt_repo
+
+- name: Check if cinder-rxt-worker binary exists
+  ansible.builtin.stat:
+    path: /usr/local/bin/cinder-rxt-worker
+  register: _worker_bin_stat
+
+- name: Compile cinder-rxt-worker release binary
+  ansible.builtin.command:
+    cmd: /usr/local/bin/cargo build --release
+    chdir: /opt/cinder-rxt-src
+  environment:
+    RUSTUP_HOME: "{{ cinder_rxt_rustup_home }}"
+    CARGO_HOME: "{{ cinder_rxt_cargo_home }}"
+    PATH: "{{ cinder_rxt_cargo_home }}/bin:/usr/local/bin:{{ ansible_env.PATH }}"
+  when: _cinder_rxt_repo.changed or not _worker_bin_stat.stat.exists
+
+- name: Install cinder-rxt-worker binary to /usr/local/bin and virtualenv
+  ansible.builtin.copy:
+    src: /opt/cinder-rxt-src/target/release/cinder-rxt-worker
+    dest: "{{ item }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /usr/local/bin/cinder-rxt-worker
+    - "{{ cinder_virtualenv_path }}/bin/cinder-rxt-worker"
+
+- name: Check and verify cinder-rxt-worker binary execution
+  ansible.builtin.command: /usr/local/bin/cinder-rxt-worker --help
+  register: _worker_check
+  changed_when: false
+  failed_when: _worker_check.rc != 0
+
 
 - name: "Get Python site-packages path from virtualenv"
   command: "{{ cinder_virtualenv_path }}/bin/python -c 'import site; print(site.getsitepackages()[0])'"
