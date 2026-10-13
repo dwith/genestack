@@ -76,6 +76,77 @@
         namespace: openstack
       register: _kubernetes_cinder_ks_etc_secret
 
+    - name: Read cinder-keystone-admin secrets
+      kubernetes.core.k8s_info:
+        kind: Secret
+        name: cinder-keystone-admin
+        namespace: openstack
+      register: _kubernetes_cinder_keystone_admin_secret
+
+    - name: Resolve internal tenant project and user IDs from Keystone
+      ansible.builtin.command:
+        cmd: >-
+          python3 -c "
+          import json, sys, urllib.request
+          auth_url = sys.argv[1].rstrip('/')
+          if not auth_url.endswith('/v3'):
+              auth_url = f'{auth_url}/v3'
+          user, pw = sys.argv[2], sys.argv[3]
+          p_name = sys.argv[4] or 'service'
+          u_domain = sys.argv[5] or 'Default'
+          p_domain = sys.argv[6] or 'Default'
+          t_proj = sys.argv[7]
+          t_user = sys.argv[8]
+          auth_body = json.dumps({
+              'auth': {
+                  'identity': {
+                      'methods': ['password'],
+                      'password': {
+                          'user': {
+                              'name': user,
+                              'domain': {'name': u_domain},
+                              'password': pw
+                          }
+                      }
+                  },
+                  'scope': {
+                      'project': {
+                          'name': p_name,
+                          'domain': {'name': p_domain}
+                      }
+                  }
+              }
+          }).encode('utf-8')
+          req = urllib.request.Request(f'{auth_url}/auth/tokens', data=auth_body, headers={'Content-Type': 'application/json'})
+          with urllib.request.urlopen(req, timeout=15) as resp:
+              token = resp.headers.get('X-Subject-Token')
+          req_p = urllib.request.Request(f'{auth_url}/projects?name={t_proj}', headers={'X-Auth-Token': token})
+          with urllib.request.urlopen(req_p, timeout=15) as resp:
+              p_data = json.loads(resp.read().decode('utf-8'))
+              p_id = p_data['projects'][0]['id'] if p_data.get('projects') else ''
+          req_u = urllib.request.Request(f'{auth_url}/users?name={t_user}', headers={'X-Auth-Token': token})
+          with urllib.request.urlopen(req_u, timeout=15) as resp:
+              u_data = json.loads(resp.read().decode('utf-8'))
+              u_id = u_data['users'][0]['id'] if u_data.get('users') else ''
+          print(f'{p_id}:{u_id}')
+          "
+          "{{ _kubernetes_cinder_keystone_admin_secret.resources[0].data['OS_AUTH_URL'] | b64decode }}"
+          "{{ _kubernetes_cinder_keystone_admin_secret.resources[0].data['OS_USERNAME'] | b64decode }}"
+          "{{ _kubernetes_cinder_keystone_admin_secret.resources[0].data['OS_PASSWORD'] | b64decode }}"
+          "{{ (_kubernetes_cinder_keystone_admin_secret.resources[0].data['OS_PROJECT_NAME'] | default('')) | b64decode }}"
+          "{{ (_kubernetes_cinder_keystone_admin_secret.resources[0].data['OS_USER_DOMAIN_NAME'] | default('')) | b64decode }}"
+          "{{ (_kubernetes_cinder_keystone_admin_secret.resources[0].data['OS_PROJECT_DOMAIN_NAME'] | default('')) | b64decode }}"
+          "{{ cinder_internal_project_name }}"
+          "{{ cinder_internal_user_name }}"
+      register: _internal_tenant_lookup
+      changed_when: false
+      failed_when: false
+      when:
+        - cinder_enable_internal_tenant | bool
+        - (cinder_internal_tenant_project_id | default('') | length == 0) or (cinder_internal_tenant_user_id | default('') | length == 0)
+        - _kubernetes_cinder_keystone_admin_secret.resources | default([]) | length > 0
+
+
 - name: Install cinder distro packages
   ansible.builtin.package:
     name: "{{ cinder_volume_package_list }}"
@@ -122,17 +193,64 @@
   when:
     - cinder_worker_name | lower != "lvm"
 
+- name: Install and verify Rust toolchain for cinder-rxt
+  ansible.builtin.include_tasks: install_rust.yaml
+  when:
+    - cinder_rxt_rust_install | default(true) | bool
+
 - name: Upgrade pip and install required packages
   ansible.builtin.pip:
     name:
       - pip
       - pymysql
       - "git+https://github.com/openstack/cinder@{{ cinder_release_branch }}"
-      - "git+https://github.com/rackerlabs/cinder-rxt.git"
+      - "git+{{ cinder_rxt_git_repo }}@{{ cinder_rxt_git_version }}"
     state: present
     virtualenv: "{{ cinder_virtualenv_path }}"
     virtualenv_command: python3 -m venv
     extra_args: "-c https://releases.openstack.org/constraints/upper/{{ cinder_release_branch | regex_replace('^(stable|unmaintained)/', '') }}"
+
+- name: Clone cinder-rxt repository for native snapshot worker compilation
+  ansible.builtin.git:
+    repo: "{{ cinder_rxt_git_repo }}"
+    dest: /opt/cinder-rxt-src
+    version: "{{ cinder_rxt_git_version }}"
+    force: true
+  register: _cinder_rxt_repo
+
+- name: Check if cinder-rxt-worker binary exists
+  ansible.builtin.stat:
+    path: /usr/local/bin/cinder-rxt-worker
+  register: _worker_bin_stat
+
+- name: Compile cinder-rxt-worker release binary
+  ansible.builtin.command:
+    cmd: /usr/local/bin/cargo build --release
+    chdir: /opt/cinder-rxt-src
+  environment:
+    RUSTUP_HOME: "{{ cinder_rxt_rustup_home }}"
+    CARGO_HOME: "{{ cinder_rxt_cargo_home }}"
+    PATH: "{{ cinder_rxt_cargo_home }}/bin:/usr/local/bin:{{ ansible_env.PATH }}"
+  when: _cinder_rxt_repo.changed or not _worker_bin_stat.stat.exists
+
+- name: Install cinder-rxt-worker binary to /usr/local/bin and virtualenv
+  ansible.builtin.copy:
+    src: /opt/cinder-rxt-src/target/release/cinder-rxt-worker
+    dest: "{{ item }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /usr/local/bin/cinder-rxt-worker
+    - "{{ cinder_virtualenv_path }}/bin/cinder-rxt-worker"
+
+- name: Check and verify cinder-rxt-worker binary execution
+  ansible.builtin.command: /usr/local/bin/cinder-rxt-worker --help
+  register: _worker_check
+  changed_when: false
+  failed_when: _worker_check.rc != 0
+
 
 - name: "Get Python site-packages path from virtualenv"
   command: "{{ cinder_virtualenv_path }}/bin/python -c 'import site; print(site.getsitepackages()[0])'"
@@ -174,6 +292,8 @@
     system: true
     createhome: true
     home: /var/lib/cinder
+    groups: disk
+    append: true
 
 - name: Create the cinder system group
   ansible.builtin.group:
@@ -193,6 +313,15 @@
     - /var/lib/cinder/volumes
     - /var/lib/cinder/conversion
     - /var/lock/cinder
+
+- name: Create systemd-tmpfiles configuration for cinder lock_path
+  ansible.builtin.copy:
+    content: |
+      d /run/lock/cinder 0755 cinder cinder -
+    dest: /etc/tmpfiles.d/cinder.conf
+    owner: root
+    group: root
+    mode: "0644"
 
 - name: Create the cinder configuration directories
   ansible.builtin.file:
@@ -236,6 +365,76 @@
     - _kubernetes_cinder_ks_etc_secret.resources | default([]) | length > 0
   notify:
     - "restart cinder services"
+
+- name: Configure cinder lock_path
+  ansible.builtin.copy:
+    content: |
+      [oslo_concurrency]
+      lock_path = /var/lock/cinder
+
+      [os_brick]
+      lock_path = /var/lock/cinder
+    dest: /etc/cinder/cinder.conf.d/lock_path.conf
+    owner: root
+    group: cinder
+    mode: "0640"
+  notify:
+    - "restart cinder services"
+
+- name: Set internal tenant facts
+  ansible.builtin.set_fact:
+    cinder_internal_tenant_project_id: "{{ cinder_internal_tenant_project_id if (cinder_internal_tenant_project_id | default('') | length > 0) else ((_internal_tenant_lookup.stdout | default(':')).split(':')[0]) }}"
+    cinder_internal_tenant_user_id: "{{ cinder_internal_tenant_user_id if (cinder_internal_tenant_user_id | default('') | length > 0) else ((_internal_tenant_lookup.stdout | default(':')).split(':')[1]) }}"
+  when:
+    - cinder_enable_internal_tenant | bool
+    - _internal_tenant_lookup is defined
+    - _internal_tenant_lookup.stdout is defined
+    - "':' in _internal_tenant_lookup.stdout"
+
+- name: Configure cinder internal tenant and image-volume cache
+  ansible.builtin.copy:
+    content: |
+      [DEFAULT]
+      cinder_internal_tenant_project_id = {{ cinder_internal_tenant_project_id }}
+      cinder_internal_tenant_user_id = {{ cinder_internal_tenant_user_id }}
+      image_volume_cache_enabled = {{ cinder_image_volume_cache_enabled | bool }}
+      image_volume_cache_max_size_gb = {{ cinder_image_volume_cache_max_size_gb }}
+      image_volume_cache_max_count = {{ cinder_image_volume_cache_max_count }}
+    dest: /etc/cinder/cinder.conf.d/internal_tenant.conf
+    owner: root
+    group: cinder
+    mode: "0640"
+  when:
+    - cinder_enable_internal_tenant | bool
+    - cinder_internal_tenant_project_id | default('') | length > 0
+    - cinder_internal_tenant_user_id | default('') | length > 0
+  notify:
+    - "restart cinder services"
+
+- name: Configure cinder glance service authentication
+  ansible.builtin.copy:
+    content: |
+      [glance]
+      auth_type = password
+      auth_url = {{ _kubernetes_cinder_keystone_admin_secret.resources[0].data['OS_AUTH_URL'] | b64decode }}
+      username = {{ _kubernetes_cinder_keystone_admin_secret.resources[0].data['OS_USERNAME'] | b64decode }}
+      password = {{ _kubernetes_cinder_keystone_admin_secret.resources[0].data['OS_PASSWORD'] | b64decode }}
+      user_domain_name = {{ (_kubernetes_cinder_keystone_admin_secret.resources[0].data.get('OS_USER_DOMAIN_NAME', '') | b64decode) | default('Default', true) }}
+      project_name = {{ (_kubernetes_cinder_keystone_admin_secret.resources[0].data.get('OS_PROJECT_NAME', '') | b64decode) | default('service', true) }}
+      project_domain_name = {{ (_kubernetes_cinder_keystone_admin_secret.resources[0].data.get('OS_PROJECT_DOMAIN_NAME', '') | b64decode) | default('Default', true) }}
+      {% if 'OS_REGION_NAME' in _kubernetes_cinder_keystone_admin_secret.resources[0].data and (_kubernetes_cinder_keystone_admin_secret.resources[0].data['OS_REGION_NAME'] | b64decode | length > 0) %}
+      region_name = {{ _kubernetes_cinder_keystone_admin_secret.resources[0].data['OS_REGION_NAME'] | b64decode }}
+      {% endif %}
+    dest: /etc/cinder/cinder.conf.d/glance.conf
+    owner: root
+    group: cinder
+    mode: "0640"
+  when:
+    - cinder_enable_glance | bool
+    - _kubernetes_cinder_keystone_admin_secret.resources | default([]) | length > 0
+  notify:
+    - "restart cinder services"
+
 
 - name: Create the cinder-volume filters and logging configuration
   ansible.builtin.copy:
