@@ -545,7 +545,7 @@ function prepareJumpHostSource() {
             exit 1
         fi
 
-        _ssh "while sudo fuser /var/{lib/{dpkg,apt/lists},cache/apt/archives}/lock >/dev/null 2>&1; do echo 'Waiting for apt locks to be released...'; sleep 5; done && sudo apt-get update && sudo apt install -y rsync git && sudo mkdir -p /opt/genestack && sudo chown ${SSH_USERNAME}:${SSH_USERNAME} /opt/genestack"
+        _ssh "while sudo fuser /var/{lib/{dpkg,apt/lists},cache/apt/archives}/lock >/dev/null 2>&1; do echo 'Waiting for apt locks to be released...'; sleep 5; done && sudo apt-get update && sudo apt install -y rsync git && sudo mkdir -p /opt/genestack && sudo chown -R ${SSH_USERNAME}:${SSH_USERNAME} /opt/genestack"
 
         echo "Copying the development source code to the jump host"
         # Exclude .git: when DEV_PATH is a git *worktree*, .git is a pointer file
@@ -555,6 +555,12 @@ function prepareJumpHostSource() {
         # Pinned submodules are reconstructed explicitly below instead.
         rsync -avz \
             --exclude='.git' \
+            --exclude='.venv' \
+            --exclude='__pycache__' \
+            --exclude='*.pyc' \
+            --exclude='.tox' \
+            --exclude='.pytest_cache' \
+            --exclude='.DS_Store' \
             -e "ssh ${SSH_OPTS_STR}" \
             "${DEV_PATH}/" "${SSH_TARGET}:/opt/genestack/"
 
@@ -997,6 +1003,7 @@ conf:
       volume_driver: cinder_rxt.rackspace.RXTLVM
       volume_group: cinder-volumes-1
       volume_clear_size: 128
+      rxt_swift_snapshots_enabled: true
   cinder_api_uwsgi:
     uwsgi:
       processes: 2
@@ -2198,8 +2205,14 @@ ${IP_2} ${LAB_NAME_PREFIX}-2.cluster.local ${LAB_NAME_PREFIX}-2
 ETC_HOSTS_EOF
 
 echo "[JUMP_HOST] Creating PV/VG"
-sudo pvcreate /dev/vdd
-sudo vgcreate cinder-volumes-1 /dev/vdd
+if ! sudo vgs cinder-volumes-1 >/dev/null 2>&1; then
+    if ! sudo pvs /dev/vdd >/dev/null 2>&1; then
+        sudo pvcreate /dev/vdd
+    fi
+    sudo vgcreate cinder-volumes-1 /dev/vdd
+else
+    echo "Volume group cinder-volumes-1 already exists on jump host, skipping creation."
+fi
 JUMP_HOST_EOF
     } | _ssh bash
 
@@ -2207,13 +2220,13 @@ JUMP_HOST_EOF
     {
         cat << NODE_1_EOF
 echo "[Node 1] Creating PV/VG"
-ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ubuntu@${LAB_NAME_PREFIX}-1 "sudo pvcreate /dev/vdd && sudo vgcreate cinder-volumes-1 /dev/vdd"
+ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ubuntu@${LAB_NAME_PREFIX}-1 "sudo vgs cinder-volumes-1 >/dev/null 2>&1 || (sudo pvs /dev/vdd >/dev/null 2>&1 || sudo pvcreate /dev/vdd && sudo vgcreate cinder-volumes-1 /dev/vdd)"
 NODE_1_EOF
     } | _ssh bash
     {
         cat << NODE_2_EOF
 echo "[Node 2] Creating PV/VG"
-ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ubuntu@${LAB_NAME_PREFIX}-2 "sudo pvcreate /dev/vdd && sudo vgcreate cinder-volumes-1 /dev/vdd"
+ssh -o ForwardAgent=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -t ubuntu@${LAB_NAME_PREFIX}-2 "sudo vgs cinder-volumes-1 >/dev/null 2>&1 || (sudo pvs /dev/vdd >/dev/null 2>&1 || sudo pvcreate /dev/vdd && sudo vgcreate cinder-volumes-1 /dev/vdd)"
 NODE_2_EOF
     } | _ssh bash
 

@@ -1,0 +1,130 @@
+---
+# Copyright 2026-Present, Rackspace Technology, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+- name: Check existing rustc installation
+  ansible.builtin.command: "{{ cinder_rxt_cargo_home }}/bin/rustc --version"
+  register: _existing_rustc_version
+  failed_when: false
+  changed_when: false
+  environment:
+    RUSTUP_HOME: "{{ cinder_rxt_rustup_home }}"
+    CARGO_HOME: "{{ cinder_rxt_cargo_home }}"
+
+- name: Check existing cargo installation
+  ansible.builtin.command: "{{ cinder_rxt_cargo_home }}/bin/cargo --version"
+  register: _existing_cargo_version
+  failed_when: false
+  changed_when: false
+  environment:
+    RUSTUP_HOME: "{{ cinder_rxt_rustup_home }}"
+    CARGO_HOME: "{{ cinder_rxt_cargo_home }}"
+
+- name: Determine if Rust toolchain installation is needed
+  ansible.builtin.set_fact:
+    _rust_needs_install: >-
+      {{ _existing_rustc_version.rc != 0 or
+         cinder_rxt_rust_version not in _existing_rustc_version.stdout or
+         _existing_cargo_version.rc != 0 }}
+
+- name: Install pinned Rust toolchain via rustup
+  when: _rust_needs_install | bool
+  block:
+    - name: Ensure Rust directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ cinder_rxt_rust_user }}"
+        group: "{{ cinder_rxt_rust_user }}"
+        mode: "0755"
+      loop:
+        - "{{ cinder_rxt_rustup_home }}"
+        - "{{ cinder_rxt_cargo_home }}"
+
+    - name: Download rustup-init script
+      ansible.builtin.get_url:
+        url: "{{ cinder_rxt_rustup_installer_url }}"
+        dest: /tmp/rustup-init.sh
+        mode: "0755"
+      register: _rustup_download
+      until: _rustup_download is success
+      retries: 5
+      delay: 3
+
+    - name: Run rustup-init to install pinned Rust toolchain
+      ansible.builtin.command: >
+        /tmp/rustup-init.sh -y
+        --default-toolchain {{ cinder_rxt_rust_version }}
+        --no-modify-path
+        --profile minimal
+      environment:
+        RUSTUP_HOME: "{{ cinder_rxt_rustup_home }}"
+        CARGO_HOME: "{{ cinder_rxt_cargo_home }}"
+      become: true
+      become_user: "{{ cinder_rxt_rust_user }}"
+
+    - name: Clean up temporary rustup-init script
+      ansible.builtin.file:
+        path: /tmp/rustup-init.sh
+        state: absent
+
+- name: Create symlinks for Rust toolchain binaries in /usr/local/bin
+  ansible.builtin.file:
+    src: "{{ cinder_rxt_cargo_home }}/bin/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    state: link
+    force: true
+  loop:
+    - rustc
+    - cargo
+    - rustup
+
+- name: Configure rust environment profile snippet
+  ansible.builtin.copy:
+    dest: /etc/profile.d/rust.sh
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      export RUSTUP_HOME={{ cinder_rxt_rustup_home }}
+      export CARGO_HOME={{ cinder_rxt_cargo_home }}
+      export PATH={{ cinder_rxt_cargo_home }}/bin:$PATH
+
+- name: Check and verify rustc toolchain installation and version
+  ansible.builtin.command: /usr/local/bin/rustc --version
+  register: _rustc_check
+  changed_when: false
+  failed_when:
+    - _rustc_check.rc != 0
+    - cinder_rxt_rust_version not in _rustc_check.stdout
+  environment:
+    RUSTUP_HOME: "{{ cinder_rxt_rustup_home }}"
+    CARGO_HOME: "{{ cinder_rxt_cargo_home }}"
+
+- name: Check and verify cargo toolchain installation
+  ansible.builtin.command: /usr/local/bin/cargo --version
+  register: _cargo_check
+  changed_when: false
+  failed_when: _cargo_check.rc != 0
+  environment:
+    RUSTUP_HOME: "{{ cinder_rxt_rustup_home }}"
+    CARGO_HOME: "{{ cinder_rxt_cargo_home }}"
+
+- name: Display verified Rust toolchain status
+  ansible.builtin.debug:
+    msg:
+      - "Rust toolchain verified successfully"
+      - "rustc: {{ _rustc_check.stdout }}"
+      - "cargo: {{ _cargo_check.stdout }}"
+      - "Pinned version: {{ cinder_rxt_rust_version }}"

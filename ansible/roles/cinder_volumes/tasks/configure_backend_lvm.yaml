@@ -12,6 +12,9 @@
       {%       set network_interface_secondary = hostvars[inventory_hostname][storage_network_interface_secondary]['ipv4']['address'] %}
       {%       set _ = default_backend.__setitem__("iscsi_secondary_ip_addresses", network_interface_secondary) %}
       {%   endif %}
+      {%   if default_backend.get("volume_driver", "").startswith("cinder_rxt.") %}
+      {%       set _ = default_backend.__setitem__("rxt_swift_snapshots_enabled", "true") %}
+      {%   endif %}
       {%   set _ = rendered_backend.__setitem__(backend, default_backend) %}
       {% endfor %}
       {{ rendered_backend }}
@@ -32,6 +35,26 @@
       [DEFAULT]
       host = {{ inventory_hostname }}
       enabled_backends = {{ cinder_backend_name }}
+      {% if cinder_rxt_swift_snapshots_enabled is defined %}
+
+      # RXT Decoupled Snapshot & Volume Driver Safeguards and Resource Controls
+      rxt_swift_snapshots_enabled = {{ cinder_rxt_swift_snapshots_enabled | lower }}
+      rxt_max_concurrent_clones = {{ cinder_rxt_max_concurrent_clones }}
+      rxt_max_concurrent_snapshots = {{ cinder_rxt_max_concurrent_snapshots }}
+      rxt_clone_concurrency = {{ cinder_rxt_clone_concurrency }}
+      rxt_snapshot_concurrency = {{ cinder_rxt_snapshot_concurrency }}
+      rxt_worker_ionice_class = {{ cinder_rxt_worker_ionice_class }}
+      rxt_worker_ionice_level = {{ cinder_rxt_worker_ionice_level }}
+      rxt_worker_nice_priority = {{ cinder_rxt_worker_nice_priority }}
+      rxt_copy_max_mbps = {{ cinder_rxt_copy_max_mbps }}
+      rxt_snapshot_max_mbps = {{ cinder_rxt_snapshot_max_mbps }}
+      {% endif %}
+
+      [oslo_concurrency]
+      lock_path = /var/lock/cinder
+
+      [os_brick]
+      lock_path = /var/lock/cinder
     dest: "/etc/cinder/lvm-cinder.conf"
     owner: root
     group: cinder
